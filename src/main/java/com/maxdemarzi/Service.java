@@ -17,25 +17,16 @@ import java.util.Map;
 @Path("/service")
 public class Service {
     private static final ObjectMapper objectMapper = new ObjectMapper();
-
+    
     @GET
-    @Path("/helloworld")
-    public Response helloWorld() throws IOException {
-        Map<String, String> results = new HashMap<String,String>(){{
-            put("hello","world");
-        }};
-        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
-    }
-
-
-    @GET
-    @Path("/path_to/{label}/from/{id}")
+    @Path("/closest/{label}/to/{id}")
     public Response pathToLabel(@PathParam("label") String label,
                                 @PathParam("id") Long id,
                                 @DefaultValue("both") @QueryParam("direction") String dir,
                                 @DefaultValue("20") @QueryParam("depth") Integer depth,
+                                @DefaultValue("0") @QueryParam("all") Integer all,
                                 @Context GraphDatabaseService db) throws IOException {
-        HashMap<String, Object> results = new HashMap<String,Object>();
+        
         Direction direction;
         if (dir.toLowerCase().equals("incoming")) {
             direction = Direction.INCOMING;
@@ -44,31 +35,34 @@ public class Service {
         } else {
             direction = Direction.BOTH;
         }
-
+        
         LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label));
         PathExpander pathExpander = PathExpanderBuilder.allTypes(direction).build();
-
+        
         TraversalDescription td = db.traversalDescription()
                 .breadthFirst()
                 .evaluator(labelEvaluator)
                 .evaluator(Evaluators.toDepth(depth))
                 .expand(pathExpander)
                 .uniqueness(Uniqueness.NODE_GLOBAL);
-
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
             Node start = db.getNodeById(id);
-
+            
             for (org.neo4j.graphdb.Path position : td.traverse(start)) {
                 Node found = position.endNode();
+                HashMap<String, Object> props = new HashMap<String, Object>();
                 for (String property : found.getPropertyKeys()) {
-                    results.put(property, found.getProperty(property));
+                    props.put(property, found.getProperty(property));
                 }
-                results.put("neo4j_node_id", found.getId());
-                break;
+                results.put(found.getId(), props);
+                
+                if (all == 0) {
+                    break;
+                }
             }
-
         }
-
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
 
