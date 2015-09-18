@@ -92,6 +92,58 @@ public class PathToLabelTest {
         assertEquals(expected, actual);
     }
     
+    @Test
+    public void shouldFindSixLabel() {
+        // literal property value limit
+        HTTP.Response response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&property_key=foo&property_value=bar").toString());
+        HashMap actual = response.content();
+        
+        LinkedHashMap<String, HashMap<String, Object>> expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        LinkedHashMap<String, Object> prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "x");
+        prop.put("foo", "bar");
+        prop.put("reg", "ex");
+        expected.put("10", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "z");
+        prop.put("foo", "bar");
+        expected.put("12", prop);
+        
+        assertEquals(expected, actual);
+        
+        // regex limit
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&property_key=reg&property_regex=ex.%2A").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "x");
+        prop.put("foo", "bar");
+        prop.put("reg", "ex");
+        expected.put("10", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "y");
+        prop.put("foo", "cat");
+        prop.put("reg", "expression");
+        expected.put("11", prop);
+        
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&property_key=reg&property_regex=ex%5Cw%2B").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "y");
+        prop.put("foo", "cat");
+        prop.put("reg", "expression");
+        expected.put("11", prop);
+        
+        assertEquals(expected, actual);
+        
+        // regex and literal
+    }
+    
     public static final String MODEL_STATEMENT =
             new StringBuilder()
                     .append("CREATE (start:Start)")
@@ -104,6 +156,9 @@ public class PathToLabelTest {
                     .append("CREATE (be:Five {name:'b'})")
                     .append("CREATE (ce:Five {name:'c'})")
                     .append("CREATE (de:Five {name:'d'})")
+                    .append("CREATE (fooa:Six {name:'x',foo:'bar',reg:'ex'})")
+                    .append("CREATE (foob:Six {name:'y',foo:'cat',reg:'expression'})")
+                    .append("CREATE (fooc:Six {name:'z',foo:'bar'})")
                     .append("CREATE (start)-[:CONNECTS]->(one)")
                     .append("CREATE (one)-[:CONNECTS]->(two)")
                     .append("CREATE (start)-[:CONNECTS]->(twotoo)")
@@ -115,5 +170,8 @@ public class PathToLabelTest {
                     .append("CREATE (three)-[:CONNECTS]->(be)")
                     .append("CREATE (three)-[:CONNECTS]->(ce)")
                     .append("CREATE (ce)-[:CONNECTS]->(de)")
+                    .append("CREATE (de)-[:CONNECTS]->(fooa)")
+                    .append("CREATE (de)-[:CONNECTS]->(foob)")
+                    .append("CREATE (de)-[:CONNECTS]->(fooc)")
                     .toString();
 }
