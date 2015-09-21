@@ -1,5 +1,5 @@
 # neo_path_to_label
-Example Traversal API finding the first shortest path to a node with a specific label
+Traversal API finding the node with a specific label that is closest to another node.
 
 # Instructions
 
@@ -16,7 +16,7 @@ Example Traversal API finding the first shortest path to a node with a specific 
         
 4. Start Neo4j server.
 
-5. Try the extension:
+5. Use the extension:
         
         :GET /v1/service/closest/{Label}/to/{node_id}
         :GET /v1/service/closest/{Label}/to/{node_id}?direction=incoming
@@ -24,5 +24,6 @@ Example Traversal API finding the first shortest path to a node with a specific 
         :GET /v1/service/closest/{Label}/to/{node_id}?depth=5
         :GET /v1/service/closest/{Label}/to/{node_id}?direction=outgoing&depth=5
 	:GET /v1/service/closest/{Label}/to/{node_id}?all=1
+	:GET /v1/service/closest/{Label}/to/{node_id}?all=1&properties=regex%40_%40reg%40_%40ex.%2A%40%40%40literal%40_%40foo%40_%40bar
         
         

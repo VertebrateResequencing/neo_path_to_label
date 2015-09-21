@@ -13,6 +13,10 @@ import javax.ws.rs.core.Response;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.AbstractMap;
+import java.util.List;
+import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,9 +31,7 @@ public class Service {
                                 @DefaultValue("both") @QueryParam("direction") String dir,
                                 @DefaultValue("20") @QueryParam("depth") Integer depth,
                                 @DefaultValue("0") @QueryParam("all") Integer all,
-                                @QueryParam("property_key") String property_key,
-                                @QueryParam("property_value") String property_value,
-                                @QueryParam("property_regex") String property_regex_str,
+                                @QueryParam("properties") String properties_str,
                                 @Context GraphDatabaseService db) throws IOException {
         
         Direction direction;
@@ -41,14 +43,28 @@ public class Service {
             direction = Direction.BOTH;
         }
         
-        boolean check_props = false;
-        boolean check_regex = false;
-        Pattern property_regex = Pattern.compile("local_variable");
-        if (property_key != null && !property_key.isEmpty() && ((property_value != null && !property_value.isEmpty()) || (property_regex_str != null && !property_regex_str.isEmpty()))) {
-            check_props = true;
-            if (property_regex_str != null && !property_regex_str.isEmpty()) {
-                check_regex = true;
-                property_regex = Pattern.compile(property_regex_str);
+        boolean check_literal_props = false;
+        boolean check_regex_props = false;
+        List<List<String>> properties_literal = new ArrayList<List<String>>();
+        //List<List<String,Pattern>> properties_regex = new ArrayList<List<String,Pattern>>();
+        List<Map.Entry<String,Pattern>> properties_regex = new ArrayList<>();
+        // List<String> WP = new ArrayList<String>();
+        if (properties_str != null && !properties_str.isEmpty()) {
+            String[] properties = properties_str.split("@@@");
+            for (String property_def_str: properties) {
+                String[] property_def = property_def_str.split("@_@");
+                if (property_def[0].equals("literal")) {
+                    List<String> kv = Arrays.asList(property_def[1], property_def[2]);
+                    properties_literal.add(kv);
+                    check_literal_props = true;
+                }
+                else {
+                    Pattern regex = Pattern.compile(property_def[2]);
+                    //List<String,Pattern> kv = Arrays.asList(property_def[1], regex);
+                    Map.Entry<String,Pattern> kv = new AbstractMap.SimpleEntry<>(property_def[1], regex);
+                    properties_regex.add(kv);
+                    check_regex_props = true;
+                }
             }
         }
         
@@ -66,26 +82,37 @@ public class Service {
         try (Transaction tx = db.beginTx()) {
             Node start = db.getNodeById(id);
             
-            for (org.neo4j.graphdb.Path position : td.traverse(start)) {
+            traversal: for (org.neo4j.graphdb.Path position : td.traverse(start)) {
                 Node found = position.endNode();
                 
-                if (check_props) {
-                    if (found.hasProperty(property_key)) {
-                        String prop = found.getProperty(property_key).toString();
-                        if (check_regex) {
-                            Matcher m = property_regex.matcher(prop);
-                            if (!m.matches()) {
-                                continue;
+                if (check_literal_props) {
+                    for (List<String> kv: properties_literal) {
+                        String key = kv.get(0);
+                        if (found.hasProperty(key)) {
+                            String prop = found.getProperty(key).toString();
+                            if (!prop.equals(kv.get(1))) {
+                                continue traversal;
                             }
                         }
                         else {
-                            if (!prop.equals(property_value)) {
-                                continue;
-                            }
+                            continue traversal;
                         }
                     }
-                    else {
-                        continue;
+                }
+                
+                if (check_regex_props) {
+                    for (Map.Entry<String,Pattern> kv: properties_regex) {
+                        String key = kv.getKey().toString();
+                        if (found.hasProperty(key)) {
+                            String prop = found.getProperty(key).toString();
+                            Matcher m = kv.getValue().matcher(prop);
+                            if (!m.matches()) {
+                                continue traversal;
+                            }
+                        }
+                        else {
+                            continue traversal;
+                        }
                     }
                 }
                 

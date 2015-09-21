@@ -95,7 +95,7 @@ public class PathToLabelTest {
     @Test
     public void shouldFindSixLabel() {
         // literal property value limit
-        HTTP.Response response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&property_key=foo&property_value=bar").toString());
+        HTTP.Response response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&properties=literal%40_%40foo%40_%40bar").toString());
         HashMap actual = response.content();
         
         LinkedHashMap<String, HashMap<String, Object>> expected = new LinkedHashMap<String, HashMap<String, Object>>();
@@ -112,7 +112,7 @@ public class PathToLabelTest {
         assertEquals(expected, actual);
         
         // regex limit
-        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&property_key=reg&property_regex=ex.%2A").toString());
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&properties=regex%40_%40reg%40_%40ex.%2A").toString());
         actual = response.content();
         
         expected = new LinkedHashMap<String, HashMap<String, Object>>();
@@ -129,7 +129,7 @@ public class PathToLabelTest {
         
         assertEquals(expected, actual);
         
-        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&property_key=reg&property_regex=ex%5Cw%2B").toString());
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&properties=regex%40_%40reg%40_%40ex%5Cw%2B").toString());
         actual = response.content();
         
         expected = new LinkedHashMap<String, HashMap<String, Object>>();
@@ -142,6 +142,55 @@ public class PathToLabelTest {
         assertEquals(expected, actual);
         
         // regex and literal
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&properties=regex%40_%40reg%40_%40ex.%2A%40%40%40literal%40_%40foo%40_%40bar").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "x");
+        prop.put("foo", "bar");
+        prop.put("reg", "ex");
+        expected.put("10", prop);
+        
+        assertEquals(expected, actual);
+        
+        // regex and regex
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&properties=regex%40_%40reg%40_%40ex.%2A%40%40%40regex%40_%40foo%40_%40.a.").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "x");
+        prop.put("foo", "bar");
+        prop.put("reg", "ex");
+        expected.put("10", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "y");
+        prop.put("foo", "cat");
+        prop.put("reg", "expression");
+        expected.put("11", prop);
+        
+        assertEquals(expected, actual);
+        
+        // literal and literal
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&properties=literal%40_%40reg%40_%40expression%40%40%40literal%40_%40foo%40_%40cat").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "y");
+        prop.put("foo", "cat");
+        prop.put("reg", "expression");
+        expected.put("11", prop);
+        
+        assertEquals(expected, actual);
+        
+        // failing literal and literal
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/closest/Six/to/0?all=1&properties=literal%40_%40reg%40_%40ex%40%40%40literal%40_%40foo%40_%40cat").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        assertEquals(expected, actual);
     }
     
     public static final String MODEL_STATEMENT =
