@@ -10,7 +10,7 @@ import java.util.LinkedHashMap;
 
 import static org.junit.Assert.assertEquals;
 
-public class PathToLabelTest {
+public class ClosestTest {
     @Rule
     public Neo4jRule neo4j = new Neo4jRule()
             .withFixture(MODEL_STATEMENT)

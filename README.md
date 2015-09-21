@@ -1,5 +1,6 @@
 # vrpipe_neo4j_plugin
-Traversal API finding the node with a specific label that is closest to another node.
+Server Plugin required by VRPipe, handling certain queries faster than is possible with
+cypher.
 
 # Instructions
 
@@ -7,7 +8,7 @@ Traversal API finding the node with a specific label that is closest to another 
 
         mvn clean package
 
-2. Copy target/vrpipe_neo4j_plugin-1.0.jar to the plugins/ directory of your Neo4j server.
+2. Copy target/vrpipe_plugin-1.0.jar to the plugins/ directory of your Neo4j server.
 
 
 3. Configure Neo4j by adding a line to conf/neo4j-server.properties:
