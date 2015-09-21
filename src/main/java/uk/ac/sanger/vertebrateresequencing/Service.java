@@ -1,4 +1,4 @@
-package com.maxdemarzi;
+package uk.ac.sanger.vertebrateresequencing;
 
 import org.codehaus.jackson.map.ObjectMapper;
 import org.neo4j.graphdb.*;
@@ -46,9 +46,7 @@ public class Service {
         boolean check_literal_props = false;
         boolean check_regex_props = false;
         List<List<String>> properties_literal = new ArrayList<List<String>>();
-        //List<List<String,Pattern>> properties_regex = new ArrayList<List<String,Pattern>>();
         List<Map.Entry<String,Pattern>> properties_regex = new ArrayList<>();
-        // List<String> WP = new ArrayList<String>();
         if (properties_str != null && !properties_str.isEmpty()) {
             String[] properties = properties_str.split("@@@");
             for (String property_def_str: properties) {
@@ -60,7 +58,6 @@ public class Service {
                 }
                 else {
                     Pattern regex = Pattern.compile(property_def[2]);
-                    //List<String,Pattern> kv = Arrays.asList(property_def[1], regex);
                     Map.Entry<String,Pattern> kv = new AbstractMap.SimpleEntry<>(property_def[1], regex);
                     properties_regex.add(kv);
                     check_regex_props = true;
@@ -129,5 +126,4 @@ public class Service {
         }
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
-
 }

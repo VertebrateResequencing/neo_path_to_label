@@ -1,4 +1,4 @@
-package com.maxdemarzi;
+package uk.ac.sanger.vertebrateresequencing;
 
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;

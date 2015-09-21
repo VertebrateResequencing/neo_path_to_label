@@ -1,4 +1,4 @@
-# neo_path_to_label
+# vrpipe_neo4j_plugin
 Traversal API finding the node with a specific label that is closest to another node.
 
 # Instructions
@@ -7,12 +7,12 @@ Traversal API finding the node with a specific label that is closest to another 
 
         mvn clean package
 
-2. Copy target/path_to_label-1.0.jar to the plugins/ directory of your Neo4j server.
+2. Copy target/vrpipe_neo4j_plugin-1.0.jar to the plugins/ directory of your Neo4j server.
 
 
 3. Configure Neo4j by adding a line to conf/neo4j-server.properties:
 
-        org.neo4j.server.thirdparty_jaxrs_classes=com.maxdemarzi=/v1
+        org.neo4j.server.thirdparty_jaxrs_classes=uk.ac.sanger.vertebrateresequencing=/v1
         
 4. Start Neo4j server.
 
@@ -26,4 +26,55 @@ Traversal API finding the node with a specific label that is closest to another 
 	:GET /v1/service/closest/{Label}/to/{node_id}?all=1
 	:GET /v1/service/closest/{Label}/to/{node_id}?all=1&properties=regex%40_%40reg%40_%40ex.%2A%40%40%40literal%40_%40foo%40_%40bar
         
-        
+# COPYRIGHT & LICENSE
+
+Copyright (c) 2015 Genome Research Limited.
+
+This file is part of VRPipe.
+
+VRPipe is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see http://www.gnu.org/licenses/.
+
+The usage of a range of years within a copyright statement contained within this
+distribution should be interpreted as being equivalent to a list of years
+including the first and last year specified and all consecutive years between
+them. For example, a copyright statement that reads 'Copyright (c) 2005, 2007-
+2009, 2011-2012' should be interpreted as being identical to a statement that
+reads 'Copyright (c) 2005, 2007, 2008, 2009, 2011, 2012' and a copyright
+statement that reads "Copyright (c) 2005-2012' should be interpreted as being
+identical to a statement that reads 'Copyright (c) 2005, 2006, 2007, 2008, 2009,
+2010, 2011, 2012'."
+
+
+This repository was based on code by Max Demarzi. The original license follows:
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Max De Marzi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -1,4 +1,4 @@
-package com.maxdemarzi;
+package uk.ac.sanger.vertebrateresequencing;
 
 import org.junit.Rule;
 import org.junit.Test;
