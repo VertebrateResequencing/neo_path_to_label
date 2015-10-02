@@ -26,6 +26,7 @@ cypher.
         :GET /v1/service/closest/{Label}/to/{node_id}?direction=outgoing&depth=5
 	:GET /v1/service/closest/{Label}/to/{node_id}?all=1
 	:GET /v1/service/closest/{Label}/to/{node_id}?all=1&properties=regex%40_%40reg%40_%40ex.%2A%40%40%40literal%40_%40foo%40_%40bar
+	:GET /v1/service/get_sequencing_hierarchy/{db_label}/{lane_node_id}
         
 # COPYRIGHT & LICENSE
 

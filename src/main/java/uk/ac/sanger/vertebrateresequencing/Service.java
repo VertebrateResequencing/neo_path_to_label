@@ -24,6 +24,19 @@ import java.util.regex.Pattern;
 public class Service {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     
+    private void addNodeDetailsToResults (Node node, HashMap<Long, HashMap<String, Object>> results, String... label) {
+        HashMap<String, Object> props = new HashMap<String, Object>();
+        for (String property : node.getPropertyKeys()) {
+            props.put(property, node.getProperty(property));
+        }
+        
+        if (label.length == 1) {
+            props.put("neo4j_label", label[0]);
+        }
+        
+        results.put(node.getId(), props);
+    }
+    
     @GET
     @Path("/closest/{label}/to/{id}")
     public Response pathToLabel(@PathParam("label") String label,
@@ -113,17 +126,140 @@ public class Service {
                     }
                 }
                 
-                HashMap<String, Object> props = new HashMap<String, Object>();
-                for (String property : found.getPropertyKeys()) {
-                    props.put(property, found.getProperty(property));
-                }
-                results.put(found.getId(), props);
+                addNodeDetailsToResults(found, results);
                 
                 if (all == 0) {
                     break;
                 }
             }
         }
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    /*
+        MATCH (lane)<-[:sequenced]-(second)<-[:prepared]-(sample)
+        WHERE id(lane) = {param}.start_id
+        OPTIONAL MATCH (sample)-[:gender]->(gender)
+        OPTIONAL MATCH (sample)<-[:member]-(taxon:$taxon_labels)
+        OPTIONAL MATCH (sample)<-[:sample]-(donor)
+        OPTIONAL MATCH (sample)<-[:member { preferred: 1 }]-(study:$study_labels)
+        RETURN lane, second, sample, gender, taxon, study, donor
+        
+        alternatively
+        
+        MATCH (lane)<-[:placed]-(sample), (lane)<-[:section]-(second)
+        WHERE id(lane) = {param}.start_id
+        [and then the same]
+    */
+    
+    enum VrtrackRelationshipTypes implements RelationshipType {
+        sequenced, prepared, gender, member, sample, placed, section
+    }
+    
+    // note that this takes a lane node id, unlike
+    // Schema::VRTrack::get_sequencing_hierarchy which takes a file node id
+    @GET
+    @Path("/get_sequencing_hierarchy/{database}/{id}") 
+    public Response getSequencingHierarchy(@PathParam("database") String database,
+                                           @PathParam("id") Long id,
+                                           @Context GraphDatabaseService db) throws IOException {
+        
+        Label taxonLabel = DynamicLabel.label(database + "|VRTrack|Taxon");
+        Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            Node lane = db.getNodeById(id);
+            if (lane == null) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            Relationship rel = lane.getSingleRelationship(VrtrackRelationshipTypes.sequenced, Direction.INCOMING);
+            
+            Node sample = null;
+            if (rel != null) {
+                Node second = rel.getStartNode();
+                if (second != null) {
+                    addNodeDetailsToResults(second, results, "Library");
+                    rel = second.getSingleRelationship(VrtrackRelationshipTypes.prepared, Direction.INCOMING);
+                    if (rel != null) {
+                        sample = rel.getStartNode();
+                    }
+                }
+            }
+            else {
+                rel = lane.getSingleRelationship(VrtrackRelationshipTypes.section, Direction.INCOMING);
+                
+                if (rel != null) {
+                    Node second = rel.getStartNode();
+                    if (second != null) {
+                        addNodeDetailsToResults(second, results, "Section");
+                    }
+                }
+                else {
+                    return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+                }
+                
+                rel = lane.getSingleRelationship(VrtrackRelationshipTypes.placed, Direction.INCOMING);
+                if (rel != null) {
+                    sample = rel.getStartNode();
+                }
+                else {
+                    return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+                }
+            }
+            
+            if (sample == null) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            addNodeDetailsToResults(lane, results, "Lane");
+            addNodeDetailsToResults(sample, results, "Sample");
+            
+            for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, Direction.OUTGOING)) {
+                Node gender = grel.getEndNode();
+                addNodeDetailsToResults(gender, results, "Gender");
+            }
+            
+            rel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, Direction.INCOMING);
+            if (rel != null) {
+                Node donor = rel.getStartNode();
+                addNodeDetailsToResults(donor, results, "Donor");
+            }
+            
+            Node preferredStudy = null;
+            Node anyStudy = null;
+            for (Relationship mrel : sample.getRelationships(VrtrackRelationshipTypes.member, Direction.INCOMING)) {
+                Node parent = mrel.getStartNode();
+                
+                if (parent.hasLabel(taxonLabel)) {
+                    addNodeDetailsToResults(parent, results, "Taxon");
+                }
+                else if (parent.hasLabel(studyLabel)) {
+                    // we prefer to only return the first study we find with a
+                    // preferred property on mrel, but will settle for any
+                    // study if none are preferred
+                    if (preferredStudy == null && mrel.hasProperty("preferred")) {
+                        String pref = mrel.getProperty("preferred").toString();
+                        if (pref.equals("1")) {
+                            preferredStudy = parent;
+                            addNodeDetailsToResults(preferredStudy, results, "Study");
+                        }
+                        else {
+                            System.out.println(" - the value was NOT 1, it was " + pref);
+                        }
+                    }
+                    else if (anyStudy == null) {
+                        anyStudy = parent;
+                    }
+                }
+            }
+            
+            if (preferredStudy == null && anyStudy != null) {
+                addNodeDetailsToResults(anyStudy, results, "Study");
+            }
+        }
+
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
 }
