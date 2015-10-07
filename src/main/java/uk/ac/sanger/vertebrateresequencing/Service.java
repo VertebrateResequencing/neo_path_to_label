@@ -156,7 +156,7 @@ public class Service {
         sequenced, prepared, gender, member, sample, placed, section
     }
     
-    // note that this takes a lane node id, unlike
+    // note that this takes a lane or section node id, unlike
     // Schema::VRTrack::get_sequencing_hierarchy which takes a file node id
     @GET
     @Path("/get_sequencing_hierarchy/{database}/{id}") 
@@ -184,6 +184,7 @@ public class Service {
                     rel = second.getSingleRelationship(VrtrackRelationshipTypes.prepared, Direction.INCOMING);
                     if (rel != null) {
                         sample = rel.getStartNode();
+                        addNodeDetailsToResults(lane, results, "Lane");
                     }
                 }
             }
@@ -193,7 +194,8 @@ public class Service {
                 if (rel != null) {
                     Node second = rel.getStartNode();
                     if (second != null) {
-                        addNodeDetailsToResults(second, results, "Section");
+                        addNodeDetailsToResults(second, results, "BeadChip");
+                        addNodeDetailsToResults(lane, results, "Section");
                     }
                 }
                 else {
@@ -213,7 +215,6 @@ public class Service {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
-            addNodeDetailsToResults(lane, results, "Lane");
             addNodeDetailsToResults(sample, results, "Sample");
             
             for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, Direction.OUTGOING)) {
