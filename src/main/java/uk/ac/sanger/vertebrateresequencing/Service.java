@@ -78,7 +78,7 @@ public class Service {
             }
         }
         
-        LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label));
+        LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label), id);
         PathExpander pathExpander = PathExpanderBuilder.allTypes(direction).build();
         
         TraversalDescription td = db.traversalDescription()
@@ -90,7 +90,13 @@ public class Service {
         
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
-            Node start = db.getNodeById(id);
+            Node start;
+            try {
+                start = db.getNodeById(id);
+            }
+            catch (NotFoundException e) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
             
             traversal: for (org.neo4j.graphdb.Path position : td.traverse(start)) {
                 Node found = position.endNode();
@@ -132,6 +138,8 @@ public class Service {
                     break;
                 }
             }
+            
+            tx.success();
         }
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
@@ -169,8 +177,11 @@ public class Service {
         
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
-            Node lane = db.getNodeById(id);
-            if (lane == null) {
+            Node lane;
+            try {
+                lane = db.getNodeById(id);
+            }
+            catch (NotFoundException e) {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
@@ -246,9 +257,6 @@ public class Service {
                             preferredStudy = parent;
                             addNodeDetailsToResults(preferredStudy, results, "Study");
                         }
-                        else {
-                            System.out.println(" - the value was NOT 1, it was " + pref);
-                        }
                     }
                     else if (anyStudy == null) {
                         anyStudy = parent;
@@ -259,6 +267,8 @@ public class Service {
             if (preferredStudy == null && anyStudy != null) {
                 addNodeDetailsToResults(anyStudy, results, "Study");
             }
+            
+            tx.success();
         }
 
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
