@@ -273,4 +273,135 @@ public class Service {
 
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
+    
+    /*
+        MATCH (a),(b) WHERE id(a) = 30843 AND id(b) = 673 MERGE (a)-[r:member]->(b) RETURN r
+        optionally with rel params supplied:
+        MATCH (a),(b) WHERE id(a) = 34 AND id(b) = 673 MERGE (a)-[r:member]->(b) SET r =  { `preferred`: {param}.`preferred` } RETURN r
+        
+        selfish mode first does:
+        MATCH (a)<-[r:$type]-(b:$labels_of_start_node) WHERE id(a) = $end_node->{id} AND id(b) <> $start_node->{id} DELETE r
+        
+        replace mode first does:
+        MATCH (a)-[r:$type]->(b:$labels_of_end_node) WHERE id(a) = $start_node->{id} AND id(b) <> $end_node->{id} DELETE r
+    */
+    
+    @GET
+    @Path("/relate/{aid}/{type}/{bid}") 
+    public Response getSequencingHierarchy(@PathParam("aid") Long aid,
+                                           @PathParam("type") String type_str,
+                                           @PathParam("bid") Long bid,
+                                           @QueryParam("properties") String properties_str,
+                                           @DefaultValue("0") @QueryParam("selfish") Integer selfish,
+                                           @DefaultValue("0") @QueryParam("replace") Integer replace,
+                                           @Context GraphDatabaseService db) throws IOException {
+        
+        RelationshipType type = DynamicRelationshipType.withName(type_str);
+        Direction out = Direction.OUTGOING;
+        Direction in = Direction.INCOMING;
+        
+        boolean add_props = false;
+        List<List<String>> properties = new ArrayList<List<String>>();
+        if (properties_str != null && !properties_str.isEmpty()) {
+            String[] theseProps = properties_str.split("@@@");
+            for (String property_def_str: theseProps) {
+                String[] property_def = property_def_str.split("@_@");
+                List<String> kv = Arrays.asList(property_def[0], property_def[1]);
+                properties.add(kv);
+                add_props = true;
+            }
+        }
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            Node a;
+            try {
+                a = db.getNodeById(aid);
+            }
+            catch (NotFoundException e) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            Node b;
+            try {
+                b = db.getNodeById(bid);
+            }
+            catch (NotFoundException e) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            if (selfish == 1) {
+                List<Label> labels = new ArrayList<>();
+                for (Label label: a.getLabels()) {
+                    labels.add(label);
+                }
+                
+                selrels: for (Relationship existingRel: b.getRelationships(type, in)) {
+                    Node startNode = existingRel.getStartNode();
+                    if (startNode.getId() == aid) {
+                        continue;
+                    }
+                    
+                    for (Label label: labels) {
+                        if (! startNode.hasLabel(label)) {
+                            continue selrels;
+                        }
+                    }
+                    
+                    existingRel.delete();
+                }
+            }
+            
+            if (replace == 1) {
+                List<Label> labels = new ArrayList<>();
+                for (Label label: b.getLabels()) {
+                    labels.add(label);
+                }
+                
+                reprels: for (Relationship existingRel: a.getRelationships(type, out)) {
+                    Node endNode = existingRel.getEndNode();
+                    if (endNode.getId() == bid) {
+                        continue;
+                    }
+                    
+                    for (Label label: labels) {
+                        if (! endNode.hasLabel(label)) {
+                            continue reprels;
+                        }
+                    }
+                    
+                    existingRel.delete();
+                }
+            }
+            
+            Relationship rel = null;
+            for (Relationship existingRel: a.getRelationships(type, out)) {
+                if (existingRel.getEndNode().getId() == bid) {
+                    rel = existingRel;
+                    break;
+                }
+            }
+            if (rel == null) {
+                rel = a.createRelationshipTo(b, type);
+            }
+            
+            if (add_props) {
+                for (List<String> kv: properties) {
+                    rel.setProperty(kv.get(0), kv.get(1));
+                }
+            }
+            
+            HashMap<String, Object> props = new HashMap<String, Object>();
+            for (String property : rel.getPropertyKeys()) {
+                props.put(property, rel.getProperty(property));
+            }
+            props.put("neo4j_type", type_str);
+            props.put("neo4j_startNode", String.valueOf(rel.getStartNode().getId()));
+            props.put("neo4j_endNode", String.valueOf(rel.getEndNode().getId()));
+            results.put(rel.getId(), props);
+            
+            tx.success();
+        }
+
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
 }
