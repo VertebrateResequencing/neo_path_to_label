@@ -557,6 +557,10 @@ public class Service {
                 ArrayList<Integer> sampleStudies = new ArrayList<Integer>();
                 for (Relationship ssRel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
                     Node study = ssRel.getStartNode();
+                    if (! study.hasLabel(studyLabel)) {
+                        continue;
+                    }
+                    
                     String studyID = study.getProperty("id").toString();
                     sampleStudies.add(Integer.parseInt(studyID));
                     
@@ -642,24 +646,14 @@ public class Service {
                 samples.put(String.valueOf(sample.getId()), sampleInfo);
             }
             
-            // work out the largest study and keep the public names of samples
-            // in that study
+            // work out the largest study
             String largestStudy = null;
             int largestStudyCount = 0;
-            HashMap<String, Integer> largestStudySamplePublicNames = null;
             for (Map.Entry<String, List<Map.Entry<Node,HashMap<String, Object>>>> entry : studyToSampleInfo.entrySet()) {
                 int size = entry.getValue().size();
                 if (size > largestStudyCount) {
                     largestStudy = entry.getKey();
                     largestStudyCount = size;
-                    
-                    largestStudySamplePublicNames = new HashMap<String, Integer>();
-                    for (Map.Entry<Node,HashMap<String, Object>> nodeAndInfo : entry.getValue()) {
-                        HashMap<String, Object> sampleInfo = nodeAndInfo.getValue();
-                        if (! sampleInfo.get("qc_status").equals("failed")) {
-                            largestStudySamplePublicNames.put(sampleInfo.get("public_name").toString(), Integer.valueOf(1));
-                        }
-                    }
                 }
             }
             
@@ -675,26 +669,23 @@ public class Service {
                         continue;
                     }
                     
-                    // a sample can be in multiple studies, but we don't process
-                    // them more than once
+                    // a sample can be in multiple studies, but we will try not
+                    // to process them more than once (but we have to process
+                    // each sample through the largest study)
                     String sampleName = sampleInfo.get("name").toString();
                     if (doneSamples.containsKey(sampleName)) {
                         continue;
                     }
-                    else {
-                        doneSamples.put(sampleName, Integer.valueOf(1));
-                    }
                     
                     // we'll get the latest genotype node for all samples,
                     // and the latest fluidigm node for samples in the
-                    // largest study, and samples that share a public_name with
-                    // samples in the largest study
+                    // largest study
                     Node sample = nodeAndInfo.getKey();
                     boolean getFluidigm = false;
-                    if (thisStudy.equals(largestStudy) || largestStudySamplePublicNames.containsKey(sampleInfo.get("public_name"))) {
+                    if (thisStudy.equals(largestStudy)) {
                         getFluidigm = true;
+                        doneSamples.put(sampleName, Integer.valueOf(1));
                     }
-                    
                     
                     HashMap<String, Node> discs = new HashMap<String, Node>();
                     int genotypeDiscEpoch = 0;
