@@ -695,7 +695,7 @@ public class Service {
                         if (disc.getProperty("type").equals("genotype")) {
                             int thisEpoch = Integer.parseInt(disc.getProperty("date").toString());
                             if (thisEpoch > genotypeDiscEpoch) {
-                                discs.put("discordance_genotype", disc);
+                                discs.put("discordance_genotyping", disc);
                                 genotypeDiscEpoch = thisEpoch;
                             }
                         }

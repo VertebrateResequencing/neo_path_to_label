@@ -33,7 +33,7 @@ public class DonorQCTest {
         sampleInfo1.put("expected_gender", "M");
         sampleInfo1.put("actual_gender", "F");
         sampleInfo1.put("actual_gender_result_file", "/gender/result/file");
-        sampleInfo1.put("discordance_genotype", "[[\"4\",\"1050\",\"1.00\",\"s2\"],[\"5\",\"2050\",\"1.00\",\"s3\"]]");
+        sampleInfo1.put("discordance_genotyping", "[[\"4\",\"1050\",\"1.00\",\"s2\"],[\"5\",\"2050\",\"1.00\",\"s3\"]]");
         sampleInfo1.put("discordance_fluidigm", "[[\"4\",\"1070\",\"1.00\",\"s2\"],[\"5\",\"2070\",\"1.00\",\"s3\"]]");
         sampleInfo1.put("cnv_calls", "data2");
         sampleInfo1.put("loh_calls", "data2a");
