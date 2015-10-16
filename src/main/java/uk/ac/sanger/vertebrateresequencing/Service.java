@@ -5,6 +5,7 @@ import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Uniqueness;
+import org.neo4j.tooling.GlobalGraphOperations;
 
 import org.json.simple.JSONObject;
 import org.json.simple.JSONArray;
@@ -787,6 +788,103 @@ public class Service {
         RETURN sample,sd_rel,s_donor,ssr,s_study
     */
     
+    private void addExtraVRTrackInfo (Node node, HashMap<String, Object> props, Label donorLabel, Label sampleLabel, Label studyLabel) {
+        if (node.hasLabel(donorLabel)) {
+            props.put("neo4j_label", "Donor");
+            
+            // add the most recent sample created date, and the name of
+            // a control sample, or just the shortest sample name if not
+            // control exists
+            int mostRecentDate = 0;
+            List<String> controls = new ArrayList<String>();
+            String shortest = null;
+            for (Relationship dsrel: node.getRelationships(VrtrackRelationshipTypes.sample, out)) {
+                Node sample = dsrel.getEndNode();
+                
+                if (sample.hasProperty("created_date")) {
+                    int thisDate = Integer.parseInt(sample.getProperty("created_date").toString());
+                    if (thisDate > mostRecentDate) {
+                        mostRecentDate = thisDate;
+                    }
+                }
+                
+                String name = null;
+                if (sample.hasProperty("public_name")) {
+                    name = sample.getProperty("public_name").toString();
+                }
+                else if (sample.hasProperty("name")) {
+                    name = sample.getProperty("name").toString();
+                }
+                if (name != null) {
+                    if (shortest == null || name.length() < shortest.length()) {
+                        shortest = name;
+                    }
+                    
+                    if (sample.hasProperty("control")) {
+                        if (sample.getProperty("control").equals("1")) {
+                            controls.add(name);
+                        }
+                    }
+                }
+            }
+            
+            if (controls.size() == 1) {
+                props.put("example_sample", controls.get(0));
+            }
+            else if (shortest != null) {
+                props.put("example_sample", shortest);
+            }
+            
+            if (mostRecentDate > 0) {
+                props.put("last_sample_added_date", String.valueOf(mostRecentDate));
+            }
+        }
+        else if (node.hasLabel(sampleLabel)) {
+            props.put("neo4j_label", "Sample");
+            
+            // add donor ids
+            Relationship sdRel = node.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+            if (sdRel != null) {
+                Node donor = sdRel.getStartNode();
+                props.put("donor_node_id", String.valueOf(donor.getId()));
+                props.put("donor_id", donor.getProperty("id").toString());
+            }
+            
+            // add the first (lowest node id) study id, preferred if possible
+            Long lowest = null;
+            Long lowestPreferred = null;
+            String studyId = null;
+            String studyIdPreferred = null;
+            for (Relationship ssRel: node.getRelationships(VrtrackRelationshipTypes.member, in)) {
+                Node study = ssRel.getStartNode();
+                if (study.hasLabel(studyLabel)) {
+                    Long studyNodeID = study.getId();
+                    if (ssRel.hasProperty("preferred")) {
+                        if (lowestPreferred == null || studyNodeID < lowestPreferred) {
+                            lowestPreferred = studyNodeID;
+                            studyIdPreferred = study.getProperty("id").toString();
+                        }
+                    }
+                    else {
+                        if (lowest == null || studyNodeID < lowest) {
+                            lowest = studyNodeID;
+                            studyId = study.getProperty("id").toString();
+                        }
+                    }
+                }
+            }
+            
+            if (studyIdPreferred != null) {
+                props.put("study_node_id", String.valueOf(lowestPreferred));
+                props.put("study_id", studyIdPreferred);
+            }
+            else if (studyId != null) {
+                props.put("study_node_id", String.valueOf(lowest));
+                props.put("study_id", studyId);
+            }
+        }
+    }
+    
     @GET
     @Path("/get_node_with_extra_info/{database}/{id}") 
     public Response getNodeWithExtra(@PathParam("database") String database,
@@ -808,100 +906,240 @@ public class Service {
             }
             
             addNodeDetailsToResults(node, results);
-            HashMap<String, Object> props = results.get(node.getId());
+            addExtraVRTrackInfo(node, results.get(node.getId()), donorLabel, sampleLabel, studyLabel);
             
-            if (node.hasLabel(donorLabel)) {
-                props.put("neo4j_label", "Donor");
+            tx.success();
+        }
+
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    /*
+        MATCH (group:$group_labels) WHERE id(group) IN {group}.ids
+        MATCH (group)-->(study:$study_labels) WHERE id(study) IN {study}.ids
+        MATCH (study)-->(donor:$donor_labels) WHERE id(donor) IN {donor}.ids
+        MATCH (donor)-->(sample:$sample_labels) WHERE id(sample) IN {sample}.ids
+        [...]
+    */
+    
+    @GET
+    @Path("/vrtrack_nodes/{database}/{label}") 
+    public Response getVrtrackNodes(@PathParam("database") String database,
+                                           @PathParam("label") String label,
+                                           @QueryParam("groups") String groupsStr,
+                                           @QueryParam("studies") String studiesStr,
+                                           @QueryParam("donors") String donorsStr,
+                                           @QueryParam("samples") String samplesStr,
+                                           @Context GraphDatabaseService db) throws IOException {
+        
+        GlobalGraphOperations ggo = GlobalGraphOperations.at(db);
+        
+        Label desiredLabel = DynamicLabel.label(database + "|VRTrack|" + label);
+        Label groupLabel = DynamicLabel.label(database + "|VRTrack|Group");
+        Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
+        Label donorLabel = DynamicLabel.label(database + "|VRTrack|Donor");
+        Label sampleLabel = DynamicLabel.label(database + "|VRTrack|Sample");
+        
+        boolean addExtra = false;
+        if (label.equals("Donor") || label.equals("Sample")) {
+            addExtra = true;
+        }
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            if (groupsStr != null) {
+                String[] groups = groupsStr.split(",");
                 
-                // add the most recent sample created date, and the name of
-                // a control sample, or just the shortest sample name if not
-                // control exists
-                int mostRecentDate = 0;
-                List<String> controls = new ArrayList<String>();
-                String shortest = null;
-                for (Relationship dsrel: node.getRelationships(VrtrackRelationshipTypes.sample, out)) {
-                    Node sample = dsrel.getEndNode();
-                    
-                    if (sample.hasProperty("created_date")) {
-                        int thisDate = Integer.parseInt(sample.getProperty("created_date").toString());
-                        if (thisDate > mostRecentDate) {
-                            mostRecentDate = thisDate;
-                        }
-                    }
-                    
-                    String name = null;
-                    if (sample.hasProperty("public_name")) {
-                        name = sample.getProperty("public_name").toString();
-                    }
-                    else if (sample.hasProperty("name")) {
-                        name = sample.getProperty("name").toString();
-                    }
-                    if (name != null) {
-                        if (shortest == null || name.length() < shortest.length()) {
-                            shortest = name;
-                        }
+                for (String groupIdStr: groups) {
+                    try {
+                        Node group = db.getNodeById(Long.parseLong(groupIdStr));
                         
-                        if (sample.hasProperty("control")) {
-                            if (sample.getProperty("control").equals("1")) {
-                                controls.add(name);
+                        if (group.hasLabel(groupLabel)) {
+                            if (label.equals("Study")) {
+                                for (Relationship gsRel: group.getRelationships(VrtrackRelationshipTypes.has, out)) {
+                                    Node study = gsRel.getEndNode();
+                                    
+                                    if (study.hasLabel(studyLabel)) {
+                                        addNodeDetailsToResults(study, results, label);
+                                    }
+                                }
+                            }
+                            else if (studiesStr != null) {
+                                String[] studies = studiesStr.split(",");
+                                
+                                for (String studyIdStr: studies) {
+                                    Node study = db.getNodeById(Long.parseLong(studyIdStr));
+                                    
+                                    if (study.hasLabel(studyLabel)) {
+                                        boolean studyInGroup = false;
+                                        for (Relationship sgRel: study.getRelationships(VrtrackRelationshipTypes.has, in)) {
+                                            Node thisGroup = sgRel.getStartNode();
+                                            if (thisGroup.getId() == group.getId()) {
+                                                studyInGroup = true;
+                                                break;
+                                            }
+                                        }
+                                        if (! studyInGroup) {
+                                            continue;
+                                        }
+                                        
+                                        if (donorsStr != null) {
+                                            String[] donors = donorsStr.split(",");
+                                            
+                                            for (String donorIdStr: donors) {
+                                                Node donor = db.getNodeById(Long.parseLong(donorIdStr));
+                                                
+                                                if (donor.hasLabel(donorLabel)) {
+                                                    if (samplesStr != null) {
+                                                        String[] samples = samplesStr.split(",");
+                                                        
+                                                        for (String sampleIdStr: samples) {
+                                                            Node sample = db.getNodeById(Long.parseLong(sampleIdStr));
+                                                            
+                                                            Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+                                                            if (sdRel != null) {
+                                                                Node thisDonor = sdRel.getStartNode();
+                                                                if (thisDonor.getId() == donor.getId()) {
+                                                                    if (label.equals("Sample")) {
+                                                                        addNodeDetailsToResults(sample, results, label);
+                                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, studyLabel);
+                                                                    }
+                                                                    else if (label.equals("Donor")) {
+                                                                        addNodeDetailsToResults(thisDonor, results, label);
+                                                                        addExtraVRTrackInfo(thisDonor, results.get(thisDonor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    else if (addExtra) {
+                                                        if (label.equals("Donor")) {
+                                                            addNodeDetailsToResults(donor, results, label);
+                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                        }
+                                                        else if (label.equals("Sample")) {
+                                                            for (Relationship dsRel: donor.getRelationships(VrtrackRelationshipTypes.sample, out)) {
+                                                                Node sample = dsRel.getEndNode();
+                                                                addNodeDetailsToResults(sample, results, label);
+                                                                addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, studyLabel);
+                                                            }
+                                                        }
+                                                        
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        else if (samplesStr != null) {
+                                            String[] samples = samplesStr.split(",");
+                                            
+                                            for (String sampleIdStr: samples) {
+                                                Node sample = db.getNodeById(Long.parseLong(sampleIdStr));
+                                                
+                                                if (sample.hasLabel(sampleLabel)) {
+                                                    if (label.equals("Sample")) {
+                                                        addNodeDetailsToResults(sample, results, label);
+                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, studyLabel);
+                                                    }
+                                                    else if (label.equals("Donor")) {
+                                                        Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+                                                        if (sdRel != null) {
+                                                            Node donor = sdRel.getStartNode();
+                                                            addNodeDetailsToResults(donor, results, label);
+                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        else if (addExtra) {
+                                            for (Relationship soRel: study.getRelationships(VrtrackRelationshipTypes.member, out)) {
+                                                Node sampleOrDonor = soRel.getEndNode();
+                                                
+                                                if (sampleOrDonor.hasLabel(desiredLabel)) {
+                                                    addNodeDetailsToResults(sampleOrDonor, results, label);
+                                                    addExtraVRTrackInfo(sampleOrDonor, results.get(sampleOrDonor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+                    catch (NotFoundException e) {
+                        continue;
+                    }
                 }
+            //     my $params       = { group => { ids => $groups } };
+            //     my $group_labels = $vrtrack->cypher_labels('Group');
+            //     my $match        = "MATCH (group:$group_labels) WHERE id(group) IN {group}.ids";
                 
-                if (controls.size() == 1) {
-                    props.put("example_sample", controls.get(0));
-                }
-                else if (shortest != null) {
-                    props.put("example_sample", shortest);
-                }
+            //     my $studies  = $args->{studies};
+            //     my $previous = 'group';
+            //     my ($donors, $samples);
+            //     if ($studies) {
+            //         $params->{study}->{ids} = $studies;
+            //         my $study_labels = $vrtrack->cypher_labels('Study');
+            //         $match .= " MATCH (group)-->(study:$study_labels) WHERE id(study) IN {study}.ids";
+            //         $previous = 'study';
+                    
+            //         $donors = $args->{donors};
+            //         if ($donors) {
+            //             $params->{donor}->{ids} = $donors;
+            //             my $donor_labels = $vrtrack->cypher_labels('Donor');
+            //             $match .= " MATCH ($previous)-->(donor:$donor_labels) WHERE id(donor) IN {donor}.ids";
+            //             $previous = 'donor';
+            //         }
+                    
+            //         $samples = $args->{samples};
+            //         if ($samples) {
+            //             $params->{sample}->{ids} = $samples;
+            //             my $sample_labels = $vrtrack->cypher_labels('Sample');
+            //             $match .= " MATCH ($previous)-->(sample:$sample_labels) WHERE id(sample) IN {sample}.ids";
+            //             $previous = 'sample';
+            //         }
+            //     }
                 
-                if (mostRecentDate > 0) {
-                    props.put("last_sample_added_date", String.valueOf(mostRecentDate));
-                }
+            //     my $donor_special;
+            //     if ($label eq 'Donor') {
+            //         # donor's just have meaningless ids; user will always want
+            //         # to see the donor's control sample public name and the
+            //         # most recent created_date of its member samples, so we will
+            //         # add those as psuedo properties on the donor nodes; first
+            //         # adjust the cypher to get the donor's samples
+            //         my $dtsmc = $vrtrack->donor_to_sample_match_cypher('donor');
+            //         $donor_special = "WITH donor $dtsmc";
+            //     }
+                
+            //     my $query;
+            //     if ($label eq 'Donor' && $donors) {
+            //         $query = $donor_special;
+            //     }
+            //     elsif ($label eq 'Sample' && $samples) {
+            //         $query = 'RETURN sample';
+            //     }
+            //     else {
+            //         my $min_d = $args->{min_depth} || 1;
+            //         my $max_d = $args->{max_depth} || 1;
+            //         my $depth = "$min_d..$max_d";
+            //         my $return = 'RETURN n';
+            //         if ($donor_special) {
+            //             $donor_special =~ s/donor/n/g;
+            //             $return = $donor_special;
+            //         }
+                    
+            //         $query = "MATCH ($previous)-[*$depth]->(n:$cypher_labels) $return";
+            //     }
+                
+            //     $cypher = ["$match $query", $params];
             }
-            else if (node.hasLabel(sampleLabel)) {
-                props.put("neo4j_label", "Sample");
-                
-                // add donor ids
-                Relationship sdRel = node.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
-                if (sdRel != null) {
-                    Node donor = sdRel.getStartNode();
-                    props.put("donor_node_id", String.valueOf(donor.getId()));
-                    props.put("donor_id", donor.getProperty("id").toString());
-                }
-                
-                // add the first (lowest node id) study id, preferred if possible
-                Long lowest = null;
-                Long lowestPreferred = null;
-                String studyId = null;
-                String studyIdPreferred = null;
-                for (Relationship ssRel: node.getRelationships(VrtrackRelationshipTypes.member, in)) {
-                    Node study = ssRel.getStartNode();
-                    if (study.hasLabel(studyLabel)) {
-                        Long studyNodeID = study.getId();
-                        if (ssRel.hasProperty("preferred")) {
-                            if (lowestPreferred == null || studyNodeID < lowestPreferred) {
-                                lowestPreferred = studyNodeID;
-                                studyIdPreferred = study.getProperty("id").toString();
-                            }
-                        }
-                        else {
-                            if (lowest == null || studyNodeID < lowest) {
-                                lowest = studyNodeID;
-                                studyId = study.getProperty("id").toString();
-                            }
-                        }
+            else {
+                ResourceIterable<Node> allNodes = ggo.getAllNodesWithLabel(desiredLabel);
+                for (Node node : allNodes) {
+                    addNodeDetailsToResults(node, results, label);
+                    if (addExtra) {
+                        addExtraVRTrackInfo(node, results.get(node.getId()), donorLabel, sampleLabel, studyLabel);
                     }
-                }
-                
-                if (studyIdPreferred != null) {
-                    props.put("study_node_id", String.valueOf(lowestPreferred));
-                    props.put("study_id", studyIdPreferred);
-                }
-                else if (studyId != null) {
-                    props.put("study_node_id", String.valueOf(lowest));
-                    props.put("study_id", studyId);
                 }
             }
             

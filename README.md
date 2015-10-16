@@ -28,6 +28,7 @@ cypher.
 	:GET /v1/service/get_sequencing_hierarchy/{db_label}/{lane_node_id}
         :GET /v1/service/donor_qc/{db_lable}/{user_name}/{donor_node_id}
 	:GET /v1/service/get_node_with_extra_info/{db_lable}/{node_id}
+	:GET /v1/service/vrtrack_nodes/{db_label}/{label}
         
 # COPYRIGHT & LICENSE
 
