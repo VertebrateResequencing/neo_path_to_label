@@ -27,6 +27,7 @@ cypher.
 	:GET /v1/service/closest/{Label}/to/{node_id}?all=1&properties=regex%40_%40reg%40_%40ex.%2A%40%40%40literal%40_%40foo%40_%40bar
 	:GET /v1/service/get_sequencing_hierarchy/{db_label}/{lane_node_id}
         :GET /v1/service/donor_qc/{db_lable}/{user_name}/{donor_node_id}
+	:GET /v1/service/get_node_with_extra_info/{db_lable}/{node_id}
         
 # COPYRIGHT & LICENSE
 

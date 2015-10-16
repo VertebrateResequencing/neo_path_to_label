@@ -775,4 +775,139 @@ public class Service {
 
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
+    
+    /*
+        MATCH (donor) WHERE id(donor) = {param}.donor_id 
+        MATCH (donor)-[ds_rel:sample]->(d_sample)
+        RETURN donor,ds_rel,d_sample
+        
+        MATCH (sample) WHERE id(sample) = {param}.sample_id 
+        OPTIONAL MATCH (sample)<-[sd_rel:sample]-(s_donor)
+        OPTIONAL MATCH (s_study:$study_labels)-[ssr:member]->(sample)
+        RETURN sample,sd_rel,s_donor,ssr,s_study
+    */
+    
+    @GET
+    @Path("/get_node_with_extra_info/{database}/{id}") 
+    public Response getNodeWithExtra(@PathParam("database") String database,
+                                           @PathParam("id") Long nodeId,
+                                           @Context GraphDatabaseService db) throws IOException {
+        
+        Label donorLabel = DynamicLabel.label(database + "|VRTrack|Donor");
+        Label sampleLabel = DynamicLabel.label(database + "|VRTrack|Sample");
+        Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            Node node;
+            try {
+                node = db.getNodeById(nodeId);
+            }
+            catch (NotFoundException e) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            addNodeDetailsToResults(node, results);
+            HashMap<String, Object> props = results.get(node.getId());
+            
+            if (node.hasLabel(donorLabel)) {
+                props.put("neo4j_label", "Donor");
+                
+                // add the most recent sample created date, and the name of
+                // a control sample, or just the shortest sample name if not
+                // control exists
+                int mostRecentDate = 0;
+                List<String> controls = new ArrayList<String>();
+                String shortest = null;
+                for (Relationship dsrel: node.getRelationships(VrtrackRelationshipTypes.sample, out)) {
+                    Node sample = dsrel.getEndNode();
+                    
+                    if (sample.hasProperty("created_date")) {
+                        int thisDate = Integer.parseInt(sample.getProperty("created_date").toString());
+                        if (thisDate > mostRecentDate) {
+                            mostRecentDate = thisDate;
+                        }
+                    }
+                    
+                    String name = null;
+                    if (sample.hasProperty("public_name")) {
+                        name = sample.getProperty("public_name").toString();
+                    }
+                    else if (sample.hasProperty("name")) {
+                        name = sample.getProperty("name").toString();
+                    }
+                    if (name != null) {
+                        if (shortest == null || name.length() < shortest.length()) {
+                            shortest = name;
+                        }
+                        
+                        if (sample.hasProperty("control")) {
+                            if (sample.getProperty("control").equals("1")) {
+                                controls.add(name);
+                            }
+                        }
+                    }
+                }
+                
+                if (controls.size() == 1) {
+                    props.put("example_sample", controls.get(0));
+                }
+                else if (shortest != null) {
+                    props.put("example_sample", shortest);
+                }
+                
+                if (mostRecentDate > 0) {
+                    props.put("last_sample_added_date", String.valueOf(mostRecentDate));
+                }
+            }
+            else if (node.hasLabel(sampleLabel)) {
+                props.put("neo4j_label", "Sample");
+                
+                // add donor ids
+                Relationship sdRel = node.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+                if (sdRel != null) {
+                    Node donor = sdRel.getStartNode();
+                    props.put("donor_node_id", String.valueOf(donor.getId()));
+                    props.put("donor_id", donor.getProperty("id").toString());
+                }
+                
+                // add the first (lowest node id) study id, preferred if possible
+                Long lowest = null;
+                Long lowestPreferred = null;
+                String studyId = null;
+                String studyIdPreferred = null;
+                for (Relationship ssRel: node.getRelationships(VrtrackRelationshipTypes.member, in)) {
+                    Node study = ssRel.getStartNode();
+                    if (study.hasLabel(studyLabel)) {
+                        Long studyNodeID = study.getId();
+                        if (ssRel.hasProperty("preferred")) {
+                            if (lowestPreferred == null || studyNodeID < lowestPreferred) {
+                                lowestPreferred = studyNodeID;
+                                studyIdPreferred = study.getProperty("id").toString();
+                            }
+                        }
+                        else {
+                            if (lowest == null || studyNodeID < lowest) {
+                                lowest = studyNodeID;
+                                studyId = study.getProperty("id").toString();
+                            }
+                        }
+                    }
+                }
+                
+                if (studyIdPreferred != null) {
+                    props.put("study_node_id", String.valueOf(lowestPreferred));
+                    props.put("study_id", studyIdPreferred);
+                }
+                else if (studyId != null) {
+                    props.put("study_node_id", String.valueOf(lowest));
+                    props.put("study_id", studyId);
+                }
+            }
+            
+            tx.success();
+        }
+
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
 }
