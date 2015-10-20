@@ -1070,68 +1070,6 @@ public class Service {
                         continue;
                     }
                 }
-            //     my $params       = { group => { ids => $groups } };
-            //     my $group_labels = $vrtrack->cypher_labels('Group');
-            //     my $match        = "MATCH (group:$group_labels) WHERE id(group) IN {group}.ids";
-                
-            //     my $studies  = $args->{studies};
-            //     my $previous = 'group';
-            //     my ($donors, $samples);
-            //     if ($studies) {
-            //         $params->{study}->{ids} = $studies;
-            //         my $study_labels = $vrtrack->cypher_labels('Study');
-            //         $match .= " MATCH (group)-->(study:$study_labels) WHERE id(study) IN {study}.ids";
-            //         $previous = 'study';
-                    
-            //         $donors = $args->{donors};
-            //         if ($donors) {
-            //             $params->{donor}->{ids} = $donors;
-            //             my $donor_labels = $vrtrack->cypher_labels('Donor');
-            //             $match .= " MATCH ($previous)-->(donor:$donor_labels) WHERE id(donor) IN {donor}.ids";
-            //             $previous = 'donor';
-            //         }
-                    
-            //         $samples = $args->{samples};
-            //         if ($samples) {
-            //             $params->{sample}->{ids} = $samples;
-            //             my $sample_labels = $vrtrack->cypher_labels('Sample');
-            //             $match .= " MATCH ($previous)-->(sample:$sample_labels) WHERE id(sample) IN {sample}.ids";
-            //             $previous = 'sample';
-            //         }
-            //     }
-                
-            //     my $donor_special;
-            //     if ($label eq 'Donor') {
-            //         # donor's just have meaningless ids; user will always want
-            //         # to see the donor's control sample public name and the
-            //         # most recent created_date of its member samples, so we will
-            //         # add those as psuedo properties on the donor nodes; first
-            //         # adjust the cypher to get the donor's samples
-            //         my $dtsmc = $vrtrack->donor_to_sample_match_cypher('donor');
-            //         $donor_special = "WITH donor $dtsmc";
-            //     }
-                
-            //     my $query;
-            //     if ($label eq 'Donor' && $donors) {
-            //         $query = $donor_special;
-            //     }
-            //     elsif ($label eq 'Sample' && $samples) {
-            //         $query = 'RETURN sample';
-            //     }
-            //     else {
-            //         my $min_d = $args->{min_depth} || 1;
-            //         my $max_d = $args->{max_depth} || 1;
-            //         my $depth = "$min_d..$max_d";
-            //         my $return = 'RETURN n';
-            //         if ($donor_special) {
-            //             $donor_special =~ s/donor/n/g;
-            //             $return = $donor_special;
-            //         }
-                    
-            //         $query = "MATCH ($previous)-[*$depth]->(n:$cypher_labels) $return";
-            //     }
-                
-            //     $cypher = ["$match $query", $params];
             }
             else {
                 ResourceIterable<Node> allNodes = ggo.getAllNodesWithLabel(desiredLabel);
