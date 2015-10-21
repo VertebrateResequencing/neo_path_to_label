@@ -51,21 +51,86 @@ public class Service {
         administers, failed_by, selected_by, passed_by, processed, imported,
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
-        pluritest, pluritest_plot
+        pluritest, pluritest_plot,
+        contains, qc_file, genotype_data, summary_stats, verify_bam_id_data, header_mistakes
+    }
+    
+    private static final Map<RelationshipType, String> fileQCTypes;
+    static {
+        Map<RelationshipType, String> aMap = new HashMap<RelationshipType, String>();
+        aMap.put(VrtrackRelationshipTypes.genotype_data, "Genotype");
+        aMap.put(VrtrackRelationshipTypes.summary_stats, "Bam_Stats");
+        aMap.put(VrtrackRelationshipTypes.verify_bam_id_data, "Verify_Bam_ID");
+        fileQCTypes = Collections.unmodifiableMap(aMap);
     }
     
     Direction in = Direction.INCOMING;
     Direction out = Direction.OUTGOING;
     
+    private List<Node> getClosest (GraphDatabaseService db, Node start, HashMap<Long, HashMap<String, Object>> results, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
+        LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label), start.getId());
+        PathExpander pathExpander = PathExpanderBuilder.allTypes(direction).build();
+        
+        TraversalDescription td = db.traversalDescription()
+                .breadthFirst()
+                .evaluator(labelEvaluator)
+                .evaluator(Evaluators.toDepth(depth))
+                .expand(pathExpander)
+                .uniqueness(Uniqueness.NODE_GLOBAL);
+        
+        List<Node> nodes = new ArrayList<Node>();
+        traversal: for (org.neo4j.graphdb.Path position : td.traverse(start)) {
+            Node found = position.endNode();
+            
+            if (check_literal_props) {
+                for (List<String> kv: properties_literal) {
+                    String key = kv.get(0);
+                    if (found.hasProperty(key)) {
+                        String prop = found.getProperty(key).toString();
+                        if (!prop.equals(kv.get(1))) {
+                            continue traversal;
+                        }
+                    }
+                    else {
+                        continue traversal;
+                    }
+                }
+            }
+            
+            if (check_regex_props) {
+                for (Map.Entry<String,Pattern> kv: properties_regex) {
+                    String key = kv.getKey().toString();
+                    if (found.hasProperty(key)) {
+                        String prop = found.getProperty(key).toString();
+                        Matcher m = kv.getValue().matcher(prop);
+                        if (!m.matches()) {
+                            continue traversal;
+                        }
+                    }
+                    else {
+                        continue traversal;
+                    }
+                }
+            }
+            
+            nodes.add(found);
+            
+            if (all == 0) {
+                break;
+            }
+        }
+        return nodes;
+    }
+    
     @GET
     @Path("/closest/{label}/to/{id}")
-    public Response pathToLabel(@PathParam("label") String label,
-                                @PathParam("id") Long id,
-                                @DefaultValue("both") @QueryParam("direction") String dir,
-                                @DefaultValue("20") @QueryParam("depth") Integer depth,
-                                @DefaultValue("0") @QueryParam("all") Integer all,
-                                @QueryParam("properties") String properties_str,
-                                @Context GraphDatabaseService db) throws IOException {
+    public Response closest(@PathParam("label") String label,
+                            @PathParam("id") Long id,
+                            @DefaultValue("both") @QueryParam("direction") String dir,
+                            @DefaultValue("20") @QueryParam("depth") Integer depth,
+                            @DefaultValue("0") @QueryParam("all") Integer all,
+                            @QueryParam("properties") String properties_str,
+                            @Context GraphDatabaseService db) throws IOException {
         
         Direction direction;
         if (dir.toLowerCase().equals("incoming")) {
@@ -98,16 +163,6 @@ public class Service {
             }
         }
         
-        LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label), id);
-        PathExpander pathExpander = PathExpanderBuilder.allTypes(direction).build();
-        
-        TraversalDescription td = db.traversalDescription()
-                .breadthFirst()
-                .evaluator(labelEvaluator)
-                .evaluator(Evaluators.toDepth(depth))
-                .expand(pathExpander)
-                .uniqueness(Uniqueness.NODE_GLOBAL);
-        
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
             Node start;
@@ -118,45 +173,10 @@ public class Service {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
-            traversal: for (org.neo4j.graphdb.Path position : td.traverse(start)) {
-                Node found = position.endNode();
-                
-                if (check_literal_props) {
-                    for (List<String> kv: properties_literal) {
-                        String key = kv.get(0);
-                        if (found.hasProperty(key)) {
-                            String prop = found.getProperty(key).toString();
-                            if (!prop.equals(kv.get(1))) {
-                                continue traversal;
-                            }
-                        }
-                        else {
-                            continue traversal;
-                        }
-                    }
-                }
-                
-                if (check_regex_props) {
-                    for (Map.Entry<String,Pattern> kv: properties_regex) {
-                        String key = kv.getKey().toString();
-                        if (found.hasProperty(key)) {
-                            String prop = found.getProperty(key).toString();
-                            Matcher m = kv.getValue().matcher(prop);
-                            if (!m.matches()) {
-                                continue traversal;
-                            }
-                        }
-                        else {
-                            continue traversal;
-                        }
-                    }
-                }
-                
-                addNodeDetailsToResults(found, results);
-                
-                if (all == 0) {
-                    break;
-                }
+            List<Node> nodes = getClosest(db, start, results, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
+            
+            for (Node node : nodes) {
+                addNodeDetailsToResults(node, results);
             }
             
             tx.success();
@@ -180,6 +200,91 @@ public class Service {
         [and then the same]
     */
     
+    private void getSequencingHierarchy (Node lane, HashMap<Long, HashMap<String, Object>> results, Label taxonLabel, Label studyLabel) {
+        Relationship rel = lane.getSingleRelationship(VrtrackRelationshipTypes.sequenced, in);
+        
+        Node sample = null;
+        if (rel != null) {
+            Node second = rel.getStartNode();
+            if (second != null) {
+                addNodeDetailsToResults(second, results, "Library");
+                rel = second.getSingleRelationship(VrtrackRelationshipTypes.prepared, in);
+                if (rel != null) {
+                    sample = rel.getStartNode();
+                    addNodeDetailsToResults(lane, results, "Lane");
+                }
+            }
+        }
+        else {
+            rel = lane.getSingleRelationship(VrtrackRelationshipTypes.section, in);
+            
+            if (rel != null) {
+                Node second = rel.getStartNode();
+                if (second != null) {
+                    addNodeDetailsToResults(second, results, "BeadChip");
+                    addNodeDetailsToResults(lane, results, "Section");
+                }
+            }
+            else {
+                return;
+            }
+            
+            rel = lane.getSingleRelationship(VrtrackRelationshipTypes.placed, in);
+            if (rel != null) {
+                sample = rel.getStartNode();
+            }
+            else {
+                return;
+            }
+        }
+        
+        if (sample == null) {
+            return;
+        }
+        
+        addNodeDetailsToResults(sample, results, "Sample");
+        
+        for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
+            Node gender = grel.getEndNode();
+            addNodeDetailsToResults(gender, results, "Gender");
+        }
+        
+        rel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+        if (rel != null) {
+            Node donor = rel.getStartNode();
+            addNodeDetailsToResults(donor, results, "Donor");
+        }
+        
+        Node preferredStudy = null;
+        Node anyStudy = null;
+        for (Relationship mrel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
+            Node parent = mrel.getStartNode();
+            
+            if (parent.hasLabel(taxonLabel)) {
+                addNodeDetailsToResults(parent, results, "Taxon");
+            }
+            else if (parent.hasLabel(studyLabel)) {
+                // we prefer to only return the first study we find with a
+                // preferred property on mrel, but will settle for any
+                // study if none are preferred
+                if (preferredStudy == null && mrel.hasProperty("preferred")) {
+                    String pref = mrel.getProperty("preferred").toString();
+                    if (pref.equals("1")) {
+                        preferredStudy = parent;
+                        addNodeDetailsToResults(preferredStudy, results, "Study");
+                    }
+                }
+                else if (anyStudy == null) {
+                    anyStudy = parent;
+                }
+            }
+        }
+        
+        if (preferredStudy == null && anyStudy != null) {
+            addNodeDetailsToResults(anyStudy, results, "Study");
+        }
+    }
+    
     // note that this takes a lane or section node id, unlike
     // Schema::VRTrack::get_sequencing_hierarchy which takes a file node id
     @GET
@@ -201,88 +306,7 @@ public class Service {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
-            Relationship rel = lane.getSingleRelationship(VrtrackRelationshipTypes.sequenced, in);
-            
-            Node sample = null;
-            if (rel != null) {
-                Node second = rel.getStartNode();
-                if (second != null) {
-                    addNodeDetailsToResults(second, results, "Library");
-                    rel = second.getSingleRelationship(VrtrackRelationshipTypes.prepared, in);
-                    if (rel != null) {
-                        sample = rel.getStartNode();
-                        addNodeDetailsToResults(lane, results, "Lane");
-                    }
-                }
-            }
-            else {
-                rel = lane.getSingleRelationship(VrtrackRelationshipTypes.section, in);
-                
-                if (rel != null) {
-                    Node second = rel.getStartNode();
-                    if (second != null) {
-                        addNodeDetailsToResults(second, results, "BeadChip");
-                        addNodeDetailsToResults(lane, results, "Section");
-                    }
-                }
-                else {
-                    return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
-                }
-                
-                rel = lane.getSingleRelationship(VrtrackRelationshipTypes.placed, in);
-                if (rel != null) {
-                    sample = rel.getStartNode();
-                }
-                else {
-                    return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
-                }
-            }
-            
-            if (sample == null) {
-                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
-            }
-            
-            addNodeDetailsToResults(sample, results, "Sample");
-            
-            for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
-                Node gender = grel.getEndNode();
-                addNodeDetailsToResults(gender, results, "Gender");
-            }
-            
-            rel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
-            if (rel != null) {
-                Node donor = rel.getStartNode();
-                addNodeDetailsToResults(donor, results, "Donor");
-            }
-            
-            Node preferredStudy = null;
-            Node anyStudy = null;
-            for (Relationship mrel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
-                Node parent = mrel.getStartNode();
-                
-                if (parent.hasLabel(taxonLabel)) {
-                    addNodeDetailsToResults(parent, results, "Taxon");
-                }
-                else if (parent.hasLabel(studyLabel)) {
-                    // we prefer to only return the first study we find with a
-                    // preferred property on mrel, but will settle for any
-                    // study if none are preferred
-                    if (preferredStudy == null && mrel.hasProperty("preferred")) {
-                        String pref = mrel.getProperty("preferred").toString();
-                        if (pref.equals("1")) {
-                            preferredStudy = parent;
-                            addNodeDetailsToResults(preferredStudy, results, "Study");
-                        }
-                    }
-                    else if (anyStudy == null) {
-                        anyStudy = parent;
-                    }
-                }
-            }
-            
-            if (preferredStudy == null && anyStudy != null) {
-                addNodeDetailsToResults(anyStudy, results, "Study");
-            }
+            getSequencingHierarchy(lane, results, taxonLabel, studyLabel);
             
             tx.success();
         }
@@ -1084,6 +1108,150 @@ public class Service {
             tx.success();
         }
 
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    /*
+        We combine what was previously a bunch of related cypher queries in
+        to one efficient set of java api calls.
+        
+        Find the file node by protocol and path (note that protocol should be
+        supplied pre-encrypted):
+        MATCH (root:$fse_label { basename: { param }.root_basename })"
+        -[:contains]->(`$dir_num` { basename: { param }.`${dir_num}_basename` })
+        -[:contains]->(leaf:$fse_label { basename: { leaf_basename } })
+        USING INDEX leaf:$fse_label(basename) RETURN leaf
+        
+        Get the file qc nodes:
+        MATCH (file) WHERE id(file) = {file}.id
+        OPTIONAL MATCH (file)-[:qc_file]->()-[:genotype_data]->(g)
+        OPTIONAL MATCH (file)-[:qc_file]->()-[:summary_stats]->(s)
+        OPTIONAL MATCH (file)-[:qc_file]->()-[:verify_bam_id_data]->(v)
+        OPTIONAL MATCH (file)-[:header_mistakes]->(h)
+        RETURN g,s,v,h
+        
+        We'll also get the closest Lane or Section node and then do what the
+        get_sequencing_hierarchy service does.
+    */
+    
+    @GET
+    @Path("/vrtrack_file_qc/{database}/{root}/{path}") 
+    public Response vrtrackFileQC(@PathParam("database") String database,
+                                           @PathParam("root") String root,
+                                           @PathParam("path") String path,
+                                           @Context GraphDatabaseService db) throws IOException {
+        
+        Label fseLabel = DynamicLabel.label(database + "|VRPipe|FileSystemElement");
+        Label taxonLabel = DynamicLabel.label(database + "|VRTrack|Taxon");
+        Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
+        boolean check_literal_props = false;
+        boolean check_regex_props = false;
+        List<List<String>> properties_literal = new ArrayList<List<String>>();
+        List<Map.Entry<String,Pattern>> properties_regex = new ArrayList<>();
+        
+        String[] basenames = path.split("/");
+        basenames = Arrays.copyOfRange(basenames, 1, basenames.length);
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            Node rootNode = db.findNode(fseLabel, "basename", root);
+            if (rootNode != null) {
+                Node leafNode = rootNode;
+                for (String basename: basenames) {
+                    Node thisLeaf = null;
+                    for (Relationship dfRel: leafNode.getRelationships(VrtrackRelationshipTypes.contains, out)) {
+                        Node fse = dfRel.getEndNode();
+                        if (fse.getProperty("basename").toString().equals(basename)) {
+                            thisLeaf = fse;
+                            break;
+                        }
+                    }
+                    
+                    if (thisLeaf != null) {
+                        leafNode = thisLeaf;
+                    }
+                    else {
+                        leafNode = null;
+                        break;
+                    }
+                }
+                
+                if (leafNode != null) {
+                    addNodeDetailsToResults(leafNode, results, "FileSystemElement");
+                    
+                    HashMap<String, Integer> doneLabels = new HashMap<String, Integer>();
+                    qcFilesLoop: for (Relationship fqRel: leafNode.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
+                        Node misc = fqRel.getEndNode();
+                        
+                        for (Map.Entry<RelationshipType, String> entry : fileQCTypes.entrySet()) {
+                            String thisLabel = entry.getValue();
+                            if (doneLabels.containsKey(thisLabel)) {
+                                continue;
+                            }
+                            
+                            RelationshipType rType = entry.getKey();
+                            
+                            int latest = 0;
+                            Node latestNode = null;
+                            for (Relationship rel: misc.getRelationships(rType, out)) {
+                                Node thisNode = rel.getEndNode();
+                                int thisDate = 0;
+                                if (thisNode.hasProperty("date")) {
+                                    thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                                }
+                                
+                                if (latestNode == null || thisDate > latest) {
+                                    latestNode = thisNode;
+                                    latest = thisDate;
+                                }
+                            }
+                            
+                            if (latestNode != null) {
+                                addNodeDetailsToResults(latestNode, results, thisLabel);
+                                doneLabels.put(thisLabel, Integer.valueOf(1));
+                                continue qcFilesLoop;
+                            }
+                        }
+                    }
+                    
+                    // Header_Mistakes nodes are directly attached to the file,
+                    // and don't have a date property, so we'll hope it's ok to
+                    // get the latest by node id
+                    Long latest = Long.valueOf(0);
+                    Node latestHeaderNode = null;
+                    for (Relationship fhRel: leafNode.getRelationships(VrtrackRelationshipTypes.header_mistakes, out)) {
+                        Node header = fhRel.getEndNode();
+                        Long nodeId = header.getId();
+                        
+                        if (nodeId > latest) {
+                            latestHeaderNode = header;
+                            latest = nodeId;
+                        }
+                    }
+                    if (latestHeaderNode != null) {
+                        addNodeDetailsToResults(latestHeaderNode, results, "Header_Mistakes");
+                    }
+                    
+                    // get the closest Lane or Section node
+                    String laneOrSectionLabel = database + "|VRTrack|Lane";
+                    List<Node> nodes = getClosest(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    if (nodes.size() != 1) {
+                        laneOrSectionLabel = database + "|VRTrack|Section";
+                        nodes = getClosest(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    }
+                    if (nodes.size() == 1) {
+                        Node laneOrSection = nodes.get(0);
+                        addNodeDetailsToResults(laneOrSection, results, laneOrSectionLabel);
+                        
+                        // add all the hierarchy nodes
+                        getSequencingHierarchy(laneOrSection, results, taxonLabel, studyLabel);
+                    }
+                }
+            }
+            
+            tx.success();
+        }
+        
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
 }
