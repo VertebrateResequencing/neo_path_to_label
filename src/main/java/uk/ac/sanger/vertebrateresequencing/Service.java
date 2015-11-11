@@ -52,7 +52,7 @@ public class Service {
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
         pluritest, pluritest_plot,
-        contains, qc_file, genotype_data, summary_stats, verify_bam_id_data, header_mistakes
+        contains, qc_file, genotype_data, summary_stats, verify_bam_id_data, header_mistakes, auto_qc_status
     }
     
     private static final Map<RelationshipType, String> fileQCTypes;
@@ -67,7 +67,7 @@ public class Service {
     Direction in = Direction.INCOMING;
     Direction out = Direction.OUTGOING;
     
-    private List<Node> getClosest (GraphDatabaseService db, Node start, HashMap<Long, HashMap<String, Object>> results, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
+    private List<org.neo4j.graphdb.Path> getClosestPaths (GraphDatabaseService db, Node start, HashMap<Long, HashMap<String, Object>> results, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
         LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label), start.getId());
         PathExpander pathExpander = PathExpanderBuilder.allTypes(direction).build();
         
@@ -78,7 +78,7 @@ public class Service {
                 .expand(pathExpander)
                 .uniqueness(Uniqueness.NODE_GLOBAL);
         
-        List<Node> nodes = new ArrayList<Node>();
+        List<org.neo4j.graphdb.Path> paths = new ArrayList<org.neo4j.graphdb.Path>();
         traversal: for (org.neo4j.graphdb.Path position : td.traverse(start)) {
             Node found = position.endNode();
             
@@ -113,11 +113,20 @@ public class Service {
                 }
             }
             
-            nodes.add(found);
+            paths.add(position);
             
             if (all == 0) {
                 break;
             }
+        }
+        return paths;
+    }
+    
+    private List<Node> getClosestNodes (GraphDatabaseService db, Node start, HashMap<Long, HashMap<String, Object>> results, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
+        List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, start, results, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
+        List<Node> nodes = new ArrayList<Node>();
+        for (org.neo4j.graphdb.Path path: paths) {
+            nodes.add(path.endNode());
         }
         return nodes;
     }
@@ -173,7 +182,7 @@ public class Service {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
-            List<Node> nodes = getClosest(db, start, results, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
+            List<Node> nodes = getClosestNodes(db, start, results, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
             
             for (Node node : nodes) {
                 addNodeDetailsToResults(node, results);
@@ -1179,8 +1188,50 @@ public class Service {
                 if (leafNode != null) {
                     addNodeDetailsToResults(leafNode, results, "FileSystemElement");
                     
+                    // get the closest Lane or Section node, and the FSE that
+                    // has qc_file relationships
+                    Node fseWithQC = null;
+                    String laneOrSectionLabel = database + "|VRTrack|Lane";
+                    List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    if (paths.size() != 1) {
+                        laneOrSectionLabel = database + "|VRTrack|Section";
+                        paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    }
+                    if (paths.size() == 1) {
+                        org.neo4j.graphdb.Path laneOrSectionPath = paths.get(0);
+                        Node laneOrSection = laneOrSectionPath.endNode();
+                        addNodeDetailsToResults(laneOrSection, results, laneOrSectionLabel);
+                        
+                        // add all the hierarchy nodes
+                        getSequencingHierarchy(laneOrSection, results, taxonLabel, studyLabel);
+                        
+                        // if there were multiple FSEs between leafNode and
+                        // laneOrSection, we want to combine the properties of
+                        // all of them on our single output FSE
+                        Long leafNodeId = leafNode.getId();
+                        HashMap<String, Object> fseProps = results.get(leafNodeId);
+                        for (Node pathNode: laneOrSectionPath.reverseNodes()) {
+                            if (pathNode.hasLabel(fseLabel)) {
+                                if (pathNode.hasRelationship(VrtrackRelationshipTypes.qc_file, out)) {
+                                    fseWithQC = pathNode;
+                                }
+                                
+                                for (String property : pathNode.getPropertyKeys()) {
+                                    fseProps.put(property, pathNode.getProperty(property));
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (fseWithQC == null) {
+                        // we didn't find any file nodes with qc_file rels, but
+                        // we'll still try and go ahead for the non-qc_file
+                        // nodes
+                        fseWithQC = leafNode;
+                    }
+                    
                     HashMap<String, Integer> doneLabels = new HashMap<String, Integer>();
-                    qcFilesLoop: for (Relationship fqRel: leafNode.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
+                    qcFilesLoop: for (Relationship fqRel: fseWithQC.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
                         Node misc = fqRel.getEndNode();
                         
                         for (Map.Entry<RelationshipType, String> entry : fileQCTypes.entrySet()) {
@@ -1219,7 +1270,7 @@ public class Service {
                     // get the latest by node id
                     Long latest = Long.valueOf(0);
                     Node latestHeaderNode = null;
-                    for (Relationship fhRel: leafNode.getRelationships(VrtrackRelationshipTypes.header_mistakes, out)) {
+                    for (Relationship fhRel: fseWithQC.getRelationships(VrtrackRelationshipTypes.header_mistakes, out)) {
                         Node header = fhRel.getEndNode();
                         Long nodeId = header.getId();
                         
@@ -1232,19 +1283,24 @@ public class Service {
                         addNodeDetailsToResults(latestHeaderNode, results, "Header_Mistakes");
                     }
                     
-                    // get the closest Lane or Section node
-                    String laneOrSectionLabel = database + "|VRTrack|Lane";
-                    List<Node> nodes = getClosest(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
-                    if (nodes.size() != 1) {
-                        laneOrSectionLabel = database + "|VRTrack|Section";
-                        nodes = getClosest(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
-                    }
-                    if (nodes.size() == 1) {
-                        Node laneOrSection = nodes.get(0);
-                        addNodeDetailsToResults(laneOrSection, results, laneOrSectionLabel);
+                    // Auto_QC nodes are directly attached to the file and do
+                    // have a date property
+                    int latestAQC = 0;
+                    Node latestAQCNode = null;
+                    for (Relationship rel: fseWithQC.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
+                        Node thisNode = rel.getEndNode();
+                        int thisDate = 0;
+                        if (thisNode.hasProperty("date")) {
+                            thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                        }
                         
-                        // add all the hierarchy nodes
-                        getSequencingHierarchy(laneOrSection, results, taxonLabel, studyLabel);
+                        if (latestAQCNode == null || thisDate > latestAQC) {
+                            latestAQCNode = thisNode;
+                            latestAQC = thisDate;
+                        }
+                    }
+                    if (latestAQCNode != null) {
+                        addNodeDetailsToResults(latestAQCNode, results, "Auto_QC");
                     }
                 }
             }

@@ -18,15 +18,19 @@ public class FileQCTest {
     
     @Test
     public void shouldGetFileQC() {
-        HTTP.Response response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_file_qc/vdp/irods%3A%2F/%2Fa%2Fb%2Flane1.cram").toString());
+        HTTP.Response response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_file_qc/vdp/%2F/%2Fa%2Fb%2Flane1.bam").toString());
         HashMap actual = response.content();
         
         LinkedHashMap<String, HashMap<String, Object>> expected = new LinkedHashMap<String, HashMap<String, Object>>();
         LinkedHashMap<String, Object> prop = new LinkedHashMap<String, Object>();
-        prop.put("basename", "lane1.cram");
-        prop.put("path", "/a/b/lane1.cram");
+        prop.put("basename", "lane1.bam");
+        prop.put("path", "/a/b/lane1.bam");
+        prop.put("target", "1");
+        prop.put("manual_qc", "1");
+        prop.put("md5", "md52");
+        prop.put("extra", "val");
         prop.put("neo4j_label", "FileSystemElement");
-        expected.put("7", prop);
+        expected.put("25", prop);
         prop = new LinkedHashMap<String, Object>();
         prop.put("uuid", "g2");
         prop.put("date", "124");
@@ -46,6 +50,11 @@ public class FileQCTest {
         prop.put("uuid", "h2");
         prop.put("neo4j_label", "Header_Mistakes");
         expected.put("17", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("uuid", "aqc1");
+        prop.put("date", "128");
+        prop.put("neo4j_label", "Auto_QC");
+        expected.put("26", prop);
         prop = new LinkedHashMap<String, Object>();
         prop.put("name", "lan1");
         prop.put("neo4j_label", "Lane");
@@ -87,7 +96,7 @@ public class FileQCTest {
                     .append("CREATE (ai:`vdp|VRPipe|FileSystemElement` {basename:'a',path:'/a'})")
                     .append("CREATE (bi:`vdp|VRPipe|FileSystemElement` {basename:'b',path:'/a/b'})")
                     .append("CREATE (cram1l:`vdp|VRPipe|FileSystemElement` {basename:'lane1.cram',path:'/a/b/lane1.cram'})")
-                    .append("CREATE (cram1i:`vdp|VRPipe|FileSystemElement` {basename:'lane1.cram',path:'/a/b/lane1.cram'})")
+                    .append("CREATE (cram1i:`vdp|VRPipe|FileSystemElement` {basename:'lane1.cram',path:'/a/b/lane1.cram',target:'1',manual_qc:'1',md5:'md51'})")
                     .append("CREATE (qcfile1:`vdp|VRPipe|FileSystemElement` {basename:'lane1.cram.geno',path:'/a/b/lane1.cram.geno'})")
                     .append("CREATE (qcfile2:`vdp|VRPipe|FileSystemElement` {basename:'lane1.cram.stats',path:'/a/b/lane1.cram.stats'})")
                     .append("CREATE (qcfile3:`vdp|VRPipe|FileSystemElement` {basename:'lane1.cram.verify',path:'/a/b/lane1.cram.verify'})")
@@ -105,6 +114,8 @@ public class FileQCTest {
                     .append("CREATE (taxon:`vdp|VRTrack|Taxon` {name:'tax1'})")
                     .append("CREATE (donor:`vdp|VRTrack|Donor` {name:'don1'})")
                     .append("CREATE (study:`vdp|VRTrack|Study` {name:'stu1'})")
+                    .append("CREATE (cramimport:`vdp|VRPipe|FileSystemElement` {basename:'lane1.bam',path:'/a/b/lane1.bam',md5:'md52',extra:'val'})")
+                    .append("CREATE (autoqc:`vdp|VRTrack|Auto_QC` {uuid:'aqc1',date:'128'})")
                     .append("CREATE (root)-[:contains]->(al)")
                     .append("CREATE (al)-[:contains]->(bl)")
                     .append("CREATE (bl)-[:contains]->(cram1l)")
@@ -121,6 +132,7 @@ public class FileQCTest {
                     .append("CREATE (qcfile3)-[:verify_bam_id_data]->(verify2)")
                     .append("CREATE (cram1i)-[:header_mistakes]->(header1)")
                     .append("CREATE (cram1i)-[:header_mistakes]->(header2)")
+                    .append("CREATE (cram1i)-[:auto_qc_status]->(autoqc)")
                     .append("CREATE (study)-[:member]->(sample)")
                     .append("CREATE (study)-[:member]->(donor)")
                     .append("CREATE (taxon)-[:member]->(sample)")
@@ -129,5 +141,7 @@ public class FileQCTest {
                     .append("CREATE (sample)-[:prepared]->(lib)")
                     .append("CREATE (lib)-[:sequenced]->(lane)")
                     .append("CREATE (lane)-[:aligned]->(cram1i)")
+                    .append("CREATE (cram1i)-[:imported]->(cramimport)")
+                    .append("CREATE (bl)-[:contains]->(cramimport)")
                     .toString();
 }
