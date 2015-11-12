@@ -130,9 +130,9 @@ public class HierarchyTest {
         prop.put("neo4j_label", "Donor");
         expected.put("6", prop);
         prop = new LinkedHashMap<String, Object>();
-        prop.put("name", "stu2");
+        prop.put("name", "stu3");
         prop.put("neo4j_label", "Study");
-        expected.put("8", prop);
+        expected.put("20", prop);
         
         assertEquals(expected, actual);
         
@@ -191,10 +191,13 @@ public class HierarchyTest {
                     .append("CREATE (sample2:`vdp|VRTrack|Sample` {name:'sam2'})")
                     .append("CREATE (gender2:`vdp|VRTrack|Gender` {name:'gen2'})")
                     .append("CREATE (taxon2:`vdp|VRTrack|Taxon` {name:'tax2'})")
+                    .append("CREATE (study3:`vdp|VRTrack|Study` {name:'stu3'})")
                     .append("CREATE (study1)-[:member]->(sample)")
                     .append("CREATE (study2)-[:member { preferred: '1' }]->(sample)")
+                    .append("CREATE (study3)-[:member { preferred: '1' }]->(sample)")
                     .append("CREATE (study1)-[:member]->(donor)")
                     .append("CREATE (study2)-[:member]->(donor)")
+                    .append("CREATE (study3)-[:member]->(donor)")
                     .append("CREATE (taxon)-[:member]->(sample)")
                     .append("CREATE (donor)-[:sample]->(sample)")
                     .append("CREATE (sample)-[:gender]->(gender)")
@@ -212,5 +215,8 @@ public class HierarchyTest {
                     .append("CREATE (sample2)-[:prepared]->(lib2)")
                     .append("CREATE (lib2)-[:sequenced]->(lane3)")
                     .append("CREATE (lane3)-[:aligned]->(file3)")
+                    .append("CREATE (lane)-[:created_for]->(study2)")
+                    .append("CREATE (lane2)-[:created_for]->(study3)")
+                    .append("CREATE (section)-[:created_for]->(study2)")
                     .toString();
 }

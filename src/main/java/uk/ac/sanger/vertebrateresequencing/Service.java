@@ -47,7 +47,7 @@ public class Service {
     }
     
     enum VrtrackRelationshipTypes implements RelationshipType {
-        sequenced, prepared, gender, member, sample, placed, section, has,
+        sequenced, prepared, gender, member, sample, placed, section, has, created_for,
         administers, failed_by, selected_by, passed_by, processed, imported,
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
@@ -207,6 +207,8 @@ public class Service {
         MATCH (lane)<-[:placed]-(sample), (lane)<-[:section]-(second)
         WHERE id(lane) = {param}.start_id
         [and then the same]
+        
+        (and now it's changed to prefer a study directly attached to lane)
     */
     
     private void getSequencingHierarchy (Node lane, HashMap<Long, HashMap<String, Object>> results, Label taxonLabel, Label studyLabel) {
@@ -264,6 +266,13 @@ public class Service {
             addNodeDetailsToResults(donor, results, "Donor");
         }
         
+        Node directlyAttachedStudy = null;
+        rel = lane.getSingleRelationship(VrtrackRelationshipTypes.created_for, out);
+        if (rel != null) {
+            directlyAttachedStudy = rel.getEndNode();
+            addNodeDetailsToResults(directlyAttachedStudy, results, "Study");
+        }
+        
         Node preferredStudy = null;
         Node anyStudy = null;
         for (Relationship mrel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
@@ -272,7 +281,7 @@ public class Service {
             if (parent.hasLabel(taxonLabel)) {
                 addNodeDetailsToResults(parent, results, "Taxon");
             }
-            else if (parent.hasLabel(studyLabel)) {
+            else if (directlyAttachedStudy == null && parent.hasLabel(studyLabel)) {
                 // we prefer to only return the first study we find with a
                 // preferred property on mrel, but will settle for any
                 // study if none are preferred
