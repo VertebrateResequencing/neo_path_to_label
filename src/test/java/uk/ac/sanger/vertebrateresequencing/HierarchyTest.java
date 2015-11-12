@@ -169,6 +169,37 @@ public class HierarchyTest {
         assertEquals(expected, actual);
     }
     
+    @Test
+    public void shouldGetSequenomHierarchy() {
+        HTTP.Response response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/get_sequencing_hierarchy/vdp/21").toString());
+        HashMap actual = response.content();
+        
+        LinkedHashMap<String, HashMap<String, Object>> expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        LinkedHashMap<String, Object> prop = new LinkedHashMap<String, Object>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "sam1");
+        prop.put("neo4j_label", "Sample");
+        expected.put("3", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "gen1");
+        prop.put("neo4j_label", "Gender");
+        expected.put("4", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "tax1");
+        prop.put("neo4j_label", "Taxon");
+        expected.put("5", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "don1");
+        prop.put("neo4j_label", "Donor");
+        expected.put("6", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "stu3");
+        prop.put("neo4j_label", "Study");
+        expected.put("20", prop);
+        
+        assertEquals(expected, actual);
+    }
+    
     public static final String MODEL_STATEMENT =
             new StringBuilder()
                     .append("CREATE (file:`vdp|VRPipe|FileSystemElement`)")
@@ -192,6 +223,7 @@ public class HierarchyTest {
                     .append("CREATE (gender2:`vdp|VRTrack|Gender` {name:'gen2'})")
                     .append("CREATE (taxon2:`vdp|VRTrack|Taxon` {name:'tax2'})")
                     .append("CREATE (study3:`vdp|VRTrack|Study` {name:'stu3'})")
+                    .append("CREATE (file5:`vdp|VRPipe|FileSystemElement` {path:'/sequenom/file.csv'})")
                     .append("CREATE (study1)-[:member]->(sample)")
                     .append("CREATE (study2)-[:member { preferred: '1' }]->(sample)")
                     .append("CREATE (study3)-[:member { preferred: '1' }]->(sample)")
@@ -218,5 +250,7 @@ public class HierarchyTest {
                     .append("CREATE (lane)-[:created_for]->(study2)")
                     .append("CREATE (lane2)-[:created_for]->(study3)")
                     .append("CREATE (section)-[:created_for]->(study2)")
+                    .append("CREATE (file5)-[:created_for]->(study3)")
+                    .append("CREATE (sample)-[:processed]->(file5)")
                     .toString();
 }

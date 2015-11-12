@@ -85,6 +85,74 @@ public class FileQCTest {
         expected.put("24", prop);
         
         assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_file_qc/vdp/%2F/%2Fa%2Fb%2Fsam1imported.csv").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "sam1imported.csv");
+        prop.put("path", "/a/b/sam1imported.csv");
+        prop.put("manual_qc", "1");
+        prop.put("md5", "md5csv");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("29", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "sam1");
+        prop.put("neo4j_label", "Sample");
+        expected.put("20", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "gen1");
+        prop.put("neo4j_label", "Gender");
+        expected.put("21", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "tax1");
+        prop.put("neo4j_label", "Taxon");
+        expected.put("22", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "don1");
+        prop.put("neo4j_label", "Donor");
+        expected.put("23", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "stu2");
+        prop.put("neo4j_label", "Study");
+        expected.put("28", prop);
+        
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_file_qc/vdp/irods%3A%2F/%2Fa%2Fb%2Fsam1.csv").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "sam1.csv");
+        prop.put("path", "/a/b/sam1.csv");
+        prop.put("manual_qc", "1");
+        prop.put("md5", "md5csv");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("27", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "sam1");
+        prop.put("neo4j_label", "Sample");
+        expected.put("20", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "gen1");
+        prop.put("neo4j_label", "Gender");
+        expected.put("21", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "tax1");
+        prop.put("neo4j_label", "Taxon");
+        expected.put("22", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "don1");
+        prop.put("neo4j_label", "Donor");
+        expected.put("23", prop);
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("name", "stu2");
+        prop.put("neo4j_label", "Study");
+        expected.put("28", prop);
+        
+        assertEquals(expected, actual);
     }
     
     public static final String MODEL_STATEMENT =
@@ -116,6 +184,9 @@ public class FileQCTest {
                     .append("CREATE (study:`vdp|VRTrack|Study` {name:'stu1'})")
                     .append("CREATE (cramimport:`vdp|VRPipe|FileSystemElement` {basename:'lane1.bam',path:'/a/b/lane1.bam',md5:'md52',extra:'val'})")
                     .append("CREATE (autoqc:`vdp|VRTrack|Auto_QC` {uuid:'aqc1',date:'128'})")
+                    .append("CREATE (csv:`vdp|VRPipe|FileSystemElement` {basename:'sam1.csv',path:'/a/b/sam1.csv',manual_qc:'1',md5:'md5csv'})")
+                    .append("CREATE (study2:`vdp|VRTrack|Study` {name:'stu2'})")
+                    .append("CREATE (csvimport:`vdp|VRPipe|FileSystemElement` {basename:'sam1imported.csv',path:'/a/b/sam1imported.csv'})")
                     .append("CREATE (root)-[:contains]->(al)")
                     .append("CREATE (al)-[:contains]->(bl)")
                     .append("CREATE (bl)-[:contains]->(cram1l)")
@@ -143,5 +214,10 @@ public class FileQCTest {
                     .append("CREATE (lane)-[:aligned]->(cram1i)")
                     .append("CREATE (cram1i)-[:imported]->(cramimport)")
                     .append("CREATE (bl)-[:contains]->(cramimport)")
+                    .append("CREATE (sample)-[:processed]->(csv)")
+                    .append("CREATE (bi)-[:contains]->(csv)")
+                    .append("CREATE (csv)-[:created_for]->(study2)")
+                    .append("CREATE (csv)-[:imported]->(csvimport)")
+                    .append("CREATE (bl)-[:contains]->(csvimport)")
                     .toString();
 }

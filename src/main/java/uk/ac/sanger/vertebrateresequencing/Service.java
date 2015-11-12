@@ -235,17 +235,25 @@ public class Service {
                     addNodeDetailsToResults(second, results, "BeadChip");
                     addNodeDetailsToResults(lane, results, "Section");
                 }
+                
+                rel = lane.getSingleRelationship(VrtrackRelationshipTypes.placed, in);
+                if (rel != null) {
+                    sample = rel.getStartNode();
+                }
+                else {
+                    return;
+                }
             }
             else {
-                return;
-            }
-            
-            rel = lane.getSingleRelationship(VrtrackRelationshipTypes.placed, in);
-            if (rel != null) {
-                sample = rel.getStartNode();
-            }
-            else {
-                return;
+                // it's a sequenom|fluidigm csv file directly attached to sample
+                rel = lane.getSingleRelationship(VrtrackRelationshipTypes.processed, in);
+                
+                if (rel != null) {
+                    sample = rel.getStartNode();
+                }
+                else {
+                    return;
+                }
             }
         }
         
@@ -305,6 +313,7 @@ public class Service {
     
     // note that this takes a lane or section node id, unlike
     // Schema::VRTrack::get_sequencing_hierarchy which takes a file node id
+    // (with the exception of files that are directly attached to samples)
     @GET
     @Path("/get_sequencing_hierarchy/{database}/{id}") 
     public Response getSequencingHierarchy(@PathParam("database") String database,
@@ -316,7 +325,7 @@ public class Service {
         
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
-            Node lane;
+            Node lane; // or section or sequenom|fluidgm csv file
             try {
                 lane = db.getNodeById(id);
             }
@@ -1227,6 +1236,35 @@ public class Service {
                                 
                                 for (String property : pathNode.getPropertyKeys()) {
                                     fseProps.put(property, pathNode.getProperty(property));
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        // we could also be dealing with a sequenom|fluidgm
+                        // result file that is directly attached to sample
+                        laneOrSectionLabel = database + "|VRTrack|Sample";
+                        paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                        if (paths.size() == 1) {
+                            org.neo4j.graphdb.Path sequenomPath = paths.get(0);
+                            
+                            // get the csv file that is 1 away from endNode
+                            // (sample), so we can get the hierarchy from there
+                            int count = 0;
+                            Long leafNodeId = leafNode.getId();
+                            HashMap<String, Object> fseProps = results.get(leafNodeId);
+                            for (Node pathNode: sequenomPath.reverseNodes()) {
+                                count++;
+                                if (pathNode.hasLabel(fseLabel)) {
+                                    if (count == 2) {
+                                        if (pathNode.hasRelationship(VrtrackRelationshipTypes.processed, in)) {
+                                            getSequencingHierarchy(pathNode, results, taxonLabel, studyLabel);
+                                        }
+                                    }
+                                    
+                                    for (String property : pathNode.getPropertyKeys()) {
+                                        fseProps.put(property, pathNode.getProperty(property));
+                                    }
                                 }
                             }
                         }
