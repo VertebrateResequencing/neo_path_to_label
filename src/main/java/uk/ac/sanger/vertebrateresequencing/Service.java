@@ -1165,9 +1165,6 @@ public class Service {
     */
     
     private Node pathToFSE (GraphDatabaseService db, Label fseLabel, String root, String path, boolean create) {
-        String[] basenames = path.split("/");
-        basenames = Arrays.copyOfRange(basenames, 1, basenames.length);
-        
         Node rootNode = fseRoots.get(root);
         if (rootNode == null) {
             if (! fseRoots.containsKey(root)) {
@@ -1175,6 +1172,13 @@ public class Service {
                 fseRoots.put(root, rootNode);
             }
         }
+        
+        if (path.equals("/")) {
+            return rootNode;
+        }
+        
+        String[] basenames = path.split("/");
+        basenames = Arrays.copyOfRange(basenames, 1, basenames.length);
         
         if (rootNode != null) {
             String newFSEQuery = "MATCH (s) WHERE id(s) = {pid} MERGE (s)-[:contains]->(n:`" + fseLabel.name() + "` { uuid: {uuid}, path: {path}, basename: {basename} }) RETURN n";
