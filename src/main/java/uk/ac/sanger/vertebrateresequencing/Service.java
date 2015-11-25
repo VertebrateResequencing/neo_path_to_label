@@ -1164,7 +1164,7 @@ public class Service {
         get_sequencing_hierarchy service does.
     */
     
-    private Node pathToFSE (GraphDatabaseService db, Label fseLabel, String root, String path, boolean create) {
+    private Node pathToFSE (GraphDatabaseService db, String dbLabel, Label fseLabel, String root, String path, boolean create) {
         Node rootNode = fseRoots.get(root);
         if (rootNode == null) {
             if (! fseRoots.containsKey(root)) {
@@ -1174,7 +1174,7 @@ public class Service {
                     Map<String, Object> parameters = new HashMap<>();
                     parameters.put("uuid", String.valueOf(UUID.randomUUID()));
                     parameters.put("basename", root);
-                    ResourceIterator<Node> resultIterator = db.execute("MERGE (n:`" + fseLabel.name() + "` { uuid: {uuid}, basename: {basename} }) RETURN n", parameters).columnAs( "n" );
+                    ResourceIterator<Node> resultIterator = db.execute("MERGE (n:`" + dbLabel + "`:`" + fseLabel.name() + "` { uuid: {uuid}, basename: {basename} }) RETURN n", parameters).columnAs( "n" );
                     rootNode = resultIterator.next();
                 }
                 
@@ -1190,11 +1190,13 @@ public class Service {
         basenames = Arrays.copyOfRange(basenames, 1, basenames.length);
         
         if (rootNode != null) {
-            String newFSEQuery = "MATCH (s) WHERE id(s) = {pid} MERGE (s)-[:contains]->(n:`" + fseLabel.name() + "` { uuid: {uuid}, path: {path}, basename: {basename} }) RETURN n";
+            String newFSEQuery = "MATCH (s) WHERE id(s) = {pid} MERGE (s)-[:contains]->(n:`" + dbLabel + "`:`" + fseLabel.name() + "` { uuid: {uuid}, path: {path}, basename: {basename} }) RETURN n";
             
             Node leafNode = rootNode;
             boolean creating = false;
+            String pathSoFar = "";
             for (String basename: basenames) {
+                pathSoFar += "/" + basename;
                 Node thisLeaf = null;
                 
                 if (! creating) {
@@ -1238,7 +1240,7 @@ public class Service {
                         Map<String, Object> parameters = new HashMap<>();
                         parameters.put("pid", leafNode.getId());
                         parameters.put("uuid", String.valueOf(UUID.randomUUID()));
-                        parameters.put("path", path);
+                        parameters.put("path", pathSoFar);
                         parameters.put("basename", basename);
                         
                         ResourceIterator<Node> resultIterator = db.execute(newFSEQuery, parameters).columnAs( "n" );
@@ -1276,7 +1278,7 @@ public class Service {
         
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
-            Node leafNode = pathToFSE(db, fseLabel, root, path, false);
+            Node leafNode = pathToFSE(db, database, fseLabel, root, path, false);
             
             if (leafNode != null) {
                 addNodeDetailsToResults(leafNode, results, "FileSystemElement");
@@ -1450,7 +1452,7 @@ public class Service {
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
             for (String path: paths) {
-                Node fse = pathToFSE(db, fseLabel, root, path, create);
+                Node fse = pathToFSE(db, database, fseLabel, root, path, create);
                 
                 if (fse != null) {
                     addNodeDetailsToResults(fse, results, "FileSystemElement");
