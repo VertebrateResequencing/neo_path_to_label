@@ -1166,6 +1166,8 @@ public class Service {
     
     private Node pathToFSE (GraphDatabaseService db, String dbLabel, Label fseLabel, String root, String path, boolean create) {
         Node rootNode = fseRoots.get(root);
+        String rootCreateQuery = "MERGE (n:`" + dbLabel + "`:`" + fseLabel.name() + "` { uuid: {uuid}, basename: {basename} }) RETURN n";
+        boolean checkRootNode = false;
         if (rootNode == null) {
             if (! fseRoots.containsKey(root)) {
                 rootNode = db.findNode(fseLabel, "basename", root);
@@ -1174,15 +1176,39 @@ public class Service {
                     Map<String, Object> parameters = new HashMap<>();
                     parameters.put("uuid", String.valueOf(UUID.randomUUID()));
                     parameters.put("basename", root);
-                    ResourceIterator<Node> resultIterator = db.execute("MERGE (n:`" + dbLabel + "`:`" + fseLabel.name() + "` { uuid: {uuid}, basename: {basename} }) RETURN n", parameters).columnAs( "n" );
+                    ResourceIterator<Node> resultIterator = db.execute(rootCreateQuery, parameters).columnAs( "n" );
                     rootNode = resultIterator.next();
                 }
                 
                 fseRoots.put(root, rootNode);
             }
         }
+        else {
+            checkRootNode = true;
+        }
         
         if (path.equals("/")) {
+            if (checkRootNode) {
+                // possibly only for testing, we need to check cached root nodes
+                // are valid
+                try {
+                    rootNode.hasRelationship(VrtrackRelationshipTypes.contains, out);
+                }
+                catch (org.neo4j.graphdb.DatabaseShutdownException|org.neo4j.graphdb.NotFoundException e) {
+                    rootNode = db.findNode(fseLabel, "basename", root);
+                    
+                    if (rootNode == null && create) {
+                        Map<String, Object> parameters = new HashMap<>();
+                        parameters.put("uuid", String.valueOf(UUID.randomUUID()));
+                        parameters.put("basename", root);
+                        ResourceIterator<Node> resultIterator = db.execute(rootCreateQuery, parameters).columnAs( "n" );
+                        rootNode = resultIterator.next();
+                    }
+                    
+                    fseRoots.put(root, rootNode);
+                }
+            }
+            
             return rootNode;
         }
         
@@ -1209,22 +1235,38 @@ public class Service {
                             }
                         }
                     }
-                    catch (org.neo4j.graphdb.DatabaseShutdownException e) {
+                    catch (org.neo4j.graphdb.DatabaseShutdownException|org.neo4j.graphdb.NotFoundException e) {
                         // possibly only happens in testing, but if we store
                         // root nodes and then the db gets "shutdown" and we
                         // reconnect, the stored root nodes will no longer work,
                         // so we fix that now
                         if (leafNode.getId() == rootNode.getId()) {
                             rootNode = db.findNode(fseLabel, "basename", root);
+                            
+                            if (rootNode == null && create) {
+                                Map<String, Object> parameters = new HashMap<>();
+                                parameters.put("uuid", String.valueOf(UUID.randomUUID()));
+                                parameters.put("basename", root);
+                                ResourceIterator<Node> resultIterator = db.execute(rootCreateQuery, parameters).columnAs( "n" );
+                                rootNode = resultIterator.next();
+                            }
+                            
                             fseRoots.put(root, rootNode);
                             
-                            leafNode = rootNode;
-                            for (Relationship dfRel: leafNode.getRelationships(VrtrackRelationshipTypes.contains, out)) {
-                                Node fse = dfRel.getEndNode();
-                                if (fse.getProperty("basename").toString().equals(basename)) {
-                                    thisLeaf = fse;
-                                    break;
+                            if (rootNode != null) {
+                                leafNode = rootNode;
+                                
+                                for (Relationship dfRel: leafNode.getRelationships(VrtrackRelationshipTypes.contains, out)) {
+                                    Node fse = dfRel.getEndNode();
+                                    if (fse.getProperty("basename").toString().equals(basename)) {
+                                        thisLeaf = fse;
+                                        break;
+                                    }
                                 }
+                            }
+                            else {
+                                leafNode = null;
+                                break;
                             }
                         }
                     }
