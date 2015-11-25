@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Collections;
+import java.util.UUID;
 
 @Path("/service")
 public class Service {
@@ -66,6 +67,8 @@ public class Service {
     
     Direction in = Direction.INCOMING;
     Direction out = Direction.OUTGOING;
+    
+    private static Map<String, Node> fseRoots = new HashMap<String, Node>();
     
     private List<org.neo4j.graphdb.Path> getClosestPaths (GraphDatabaseService db, Node start, HashMap<Long, HashMap<String, Object>> results, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
         LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label), start.getId());
@@ -1161,6 +1164,88 @@ public class Service {
         get_sequencing_hierarchy service does.
     */
     
+    private Node pathToFSE (GraphDatabaseService db, Label fseLabel, String root, String path, boolean create) {
+        String[] basenames = path.split("/");
+        basenames = Arrays.copyOfRange(basenames, 1, basenames.length);
+        
+        Node rootNode = fseRoots.get(root);
+        if (rootNode == null) {
+            if (! fseRoots.containsKey(root)) {
+                rootNode = db.findNode(fseLabel, "basename", root);
+                fseRoots.put(root, rootNode);
+            }
+        }
+        
+        if (rootNode != null) {
+            String newFSEQuery = "MATCH (s) WHERE id(s) = {pid} MERGE (s)-[:contains]->(n:`" + fseLabel.name() + "` { uuid: {uuid}, path: {path}, basename: {basename} }) RETURN n";
+            
+            Node leafNode = rootNode;
+            boolean creating = false;
+            for (String basename: basenames) {
+                Node thisLeaf = null;
+                
+                if (! creating) {
+                    try {
+                        for (Relationship dfRel: leafNode.getRelationships(VrtrackRelationshipTypes.contains, out)) {
+                            Node fse = dfRel.getEndNode();
+                            if (fse.getProperty("basename").toString().equals(basename)) {
+                                thisLeaf = fse;
+                                break;
+                            }
+                        }
+                    }
+                    catch (org.neo4j.graphdb.DatabaseShutdownException e) {
+                        // possibly only happens in testing, but if we store
+                        // root nodes and then the db gets "shutdown" and we
+                        // reconnect, the stored root nodes will no longer work,
+                        // so we fix that now
+                        if (leafNode.getId() == rootNode.getId()) {
+                            rootNode = db.findNode(fseLabel, "basename", root);
+                            fseRoots.put(root, rootNode);
+                            
+                            leafNode = rootNode;
+                            for (Relationship dfRel: leafNode.getRelationships(VrtrackRelationshipTypes.contains, out)) {
+                                Node fse = dfRel.getEndNode();
+                                if (fse.getProperty("basename").toString().equals(basename)) {
+                                    thisLeaf = fse;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (thisLeaf != null) {
+                    leafNode = thisLeaf;
+                }
+                else {
+                    if (create) {
+                        // we have to use cypher MERGE to ensure we stick to
+                        // our uniqueness constraints
+                        Map<String, Object> parameters = new HashMap<>();
+                        parameters.put("pid", leafNode.getId());
+                        parameters.put("uuid", String.valueOf(UUID.randomUUID()));
+                        parameters.put("path", path);
+                        parameters.put("basename", basename);
+                        
+                        ResourceIterator<Node> resultIterator = db.execute(newFSEQuery, parameters).columnAs( "n" );
+                        leafNode = resultIterator.next();
+                        
+                        creating = true;
+                    }
+                    else {
+                        leafNode = null;
+                        break;
+                    }
+                }
+            }
+            
+            return leafNode;
+        }
+        
+        return null;
+    }
+    
     @GET
     @Path("/vrtrack_file_qc/{database}/{root}/{path}") 
     public Response vrtrackFileQC(@PathParam("database") String database,
@@ -1176,62 +1261,67 @@ public class Service {
         List<List<String>> properties_literal = new ArrayList<List<String>>();
         List<Map.Entry<String,Pattern>> properties_regex = new ArrayList<>();
         
-        String[] basenames = path.split("/");
-        basenames = Arrays.copyOfRange(basenames, 1, basenames.length);
-        
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
-            Node rootNode = db.findNode(fseLabel, "basename", root);
-            if (rootNode != null) {
-                Node leafNode = rootNode;
-                for (String basename: basenames) {
-                    Node thisLeaf = null;
-                    for (Relationship dfRel: leafNode.getRelationships(VrtrackRelationshipTypes.contains, out)) {
-                        Node fse = dfRel.getEndNode();
-                        if (fse.getProperty("basename").toString().equals(basename)) {
-                            thisLeaf = fse;
-                            break;
+            Node leafNode = pathToFSE(db, fseLabel, root, path, false);
+            
+            if (leafNode != null) {
+                addNodeDetailsToResults(leafNode, results, "FileSystemElement");
+                
+                // get the closest Lane or Section node, and the FSE that
+                // has qc_file relationships
+                Node fseWithQC = null;
+                String laneOrSectionLabel = database + "|VRTrack|Lane";
+                List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                if (paths.size() != 1) {
+                    laneOrSectionLabel = database + "|VRTrack|Section";
+                    paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                }
+                if (paths.size() == 1) {
+                    org.neo4j.graphdb.Path laneOrSectionPath = paths.get(0);
+                    Node laneOrSection = laneOrSectionPath.endNode();
+                    addNodeDetailsToResults(laneOrSection, results, laneOrSectionLabel);
+                    
+                    // add all the hierarchy nodes
+                    getSequencingHierarchy(laneOrSection, results, taxonLabel, studyLabel);
+                    
+                    // if there were multiple FSEs between leafNode and
+                    // laneOrSection, we want to combine the properties of
+                    // all of them on our single output FSE
+                    Long leafNodeId = leafNode.getId();
+                    HashMap<String, Object> fseProps = results.get(leafNodeId);
+                    for (Node pathNode: laneOrSectionPath.reverseNodes()) {
+                        if (pathNode.hasLabel(fseLabel)) {
+                            if (pathNode.hasRelationship(VrtrackRelationshipTypes.qc_file, out)) {
+                                fseWithQC = pathNode;
+                            }
+                            
+                            for (String property : pathNode.getPropertyKeys()) {
+                                fseProps.put(property, pathNode.getProperty(property));
+                            }
                         }
                     }
-                    
-                    if (thisLeaf != null) {
-                        leafNode = thisLeaf;
-                    }
-                    else {
-                        leafNode = null;
-                        break;
-                    }
                 }
-                
-                if (leafNode != null) {
-                    addNodeDetailsToResults(leafNode, results, "FileSystemElement");
-                    
-                    // get the closest Lane or Section node, and the FSE that
-                    // has qc_file relationships
-                    Node fseWithQC = null;
-                    String laneOrSectionLabel = database + "|VRTrack|Lane";
-                    List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
-                    if (paths.size() != 1) {
-                        laneOrSectionLabel = database + "|VRTrack|Section";
-                        paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
-                    }
+                else {
+                    // we could also be dealing with a sequenom|fluidgm
+                    // result file that is directly attached to sample
+                    laneOrSectionLabel = database + "|VRTrack|Sample";
+                    paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
                     if (paths.size() == 1) {
-                        org.neo4j.graphdb.Path laneOrSectionPath = paths.get(0);
-                        Node laneOrSection = laneOrSectionPath.endNode();
-                        addNodeDetailsToResults(laneOrSection, results, laneOrSectionLabel);
+                        org.neo4j.graphdb.Path sequenomPath = paths.get(0);
                         
-                        // add all the hierarchy nodes
-                        getSequencingHierarchy(laneOrSection, results, taxonLabel, studyLabel);
-                        
-                        // if there were multiple FSEs between leafNode and
-                        // laneOrSection, we want to combine the properties of
-                        // all of them on our single output FSE
+                        // get the csv file that is 1 away from endNode
+                        // (sample), so we can get the hierarchy from there
+                        int count = 0;
                         Long leafNodeId = leafNode.getId();
                         HashMap<String, Object> fseProps = results.get(leafNodeId);
-                        for (Node pathNode: laneOrSectionPath.reverseNodes()) {
+                        for (Node pathNode: sequenomPath.reverseNodes()) {
+                            count++;
                             if (pathNode.hasLabel(fseLabel)) {
-                                if (pathNode.hasRelationship(VrtrackRelationshipTypes.qc_file, out)) {
-                                    fseWithQC = pathNode;
+                                if (count == 2) {
+                                    if (pathNode.hasRelationship(VrtrackRelationshipTypes.processed, in)) {
+                                        getSequencingHierarchy(pathNode, results, taxonLabel, studyLabel);
+                                    }
                                 }
                                 
                                 for (String property : pathNode.getPropertyKeys()) {
@@ -1240,115 +1330,117 @@ public class Service {
                             }
                         }
                     }
-                    else {
-                        // we could also be dealing with a sequenom|fluidgm
-                        // result file that is directly attached to sample
-                        laneOrSectionLabel = database + "|VRTrack|Sample";
-                        paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
-                        if (paths.size() == 1) {
-                            org.neo4j.graphdb.Path sequenomPath = paths.get(0);
-                            
-                            // get the csv file that is 1 away from endNode
-                            // (sample), so we can get the hierarchy from there
-                            int count = 0;
-                            Long leafNodeId = leafNode.getId();
-                            HashMap<String, Object> fseProps = results.get(leafNodeId);
-                            for (Node pathNode: sequenomPath.reverseNodes()) {
-                                count++;
-                                if (pathNode.hasLabel(fseLabel)) {
-                                    if (count == 2) {
-                                        if (pathNode.hasRelationship(VrtrackRelationshipTypes.processed, in)) {
-                                            getSequencingHierarchy(pathNode, results, taxonLabel, studyLabel);
-                                        }
-                                    }
-                                    
-                                    for (String property : pathNode.getPropertyKeys()) {
-                                        fseProps.put(property, pathNode.getProperty(property));
-                                    }
-                                }
-                            }
-                        }
-                    }
+                }
+                
+                if (fseWithQC == null) {
+                    // we didn't find any file nodes with qc_file rels, but
+                    // we'll still try and go ahead for the non-qc_file
+                    // nodes
+                    fseWithQC = leafNode;
+                }
+                
+                HashMap<String, Integer> doneLabels = new HashMap<String, Integer>();
+                qcFilesLoop: for (Relationship fqRel: fseWithQC.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
+                    Node misc = fqRel.getEndNode();
                     
-                    if (fseWithQC == null) {
-                        // we didn't find any file nodes with qc_file rels, but
-                        // we'll still try and go ahead for the non-qc_file
-                        // nodes
-                        fseWithQC = leafNode;
-                    }
-                    
-                    HashMap<String, Integer> doneLabels = new HashMap<String, Integer>();
-                    qcFilesLoop: for (Relationship fqRel: fseWithQC.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
-                        Node misc = fqRel.getEndNode();
-                        
-                        for (Map.Entry<RelationshipType, String> entry : fileQCTypes.entrySet()) {
-                            String thisLabel = entry.getValue();
-                            if (doneLabels.containsKey(thisLabel)) {
-                                continue;
-                            }
-                            
-                            RelationshipType rType = entry.getKey();
-                            
-                            int latest = 0;
-                            Node latestNode = null;
-                            for (Relationship rel: misc.getRelationships(rType, out)) {
-                                Node thisNode = rel.getEndNode();
-                                int thisDate = 0;
-                                if (thisNode.hasProperty("date")) {
-                                    thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
-                                }
-                                
-                                if (latestNode == null || thisDate > latest) {
-                                    latestNode = thisNode;
-                                    latest = thisDate;
-                                }
-                            }
-                            
-                            if (latestNode != null) {
-                                addNodeDetailsToResults(latestNode, results, thisLabel);
-                                doneLabels.put(thisLabel, Integer.valueOf(1));
-                                continue qcFilesLoop;
-                            }
-                        }
-                    }
-                    
-                    // Header_Mistakes nodes are directly attached to the file,
-                    // and don't have a date property, so we'll hope it's ok to
-                    // get the latest by node id
-                    Long latest = Long.valueOf(0);
-                    Node latestHeaderNode = null;
-                    for (Relationship fhRel: fseWithQC.getRelationships(VrtrackRelationshipTypes.header_mistakes, out)) {
-                        Node header = fhRel.getEndNode();
-                        Long nodeId = header.getId();
-                        
-                        if (nodeId > latest) {
-                            latestHeaderNode = header;
-                            latest = nodeId;
-                        }
-                    }
-                    if (latestHeaderNode != null) {
-                        addNodeDetailsToResults(latestHeaderNode, results, "Header_Mistakes");
-                    }
-                    
-                    // Auto_QC nodes are directly attached to the file and do
-                    // have a date property
-                    int latestAQC = 0;
-                    Node latestAQCNode = null;
-                    for (Relationship rel: fseWithQC.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
-                        Node thisNode = rel.getEndNode();
-                        int thisDate = 0;
-                        if (thisNode.hasProperty("date")) {
-                            thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                    for (Map.Entry<RelationshipType, String> entry : fileQCTypes.entrySet()) {
+                        String thisLabel = entry.getValue();
+                        if (doneLabels.containsKey(thisLabel)) {
+                            continue;
                         }
                         
-                        if (latestAQCNode == null || thisDate > latestAQC) {
-                            latestAQCNode = thisNode;
-                            latestAQC = thisDate;
+                        RelationshipType rType = entry.getKey();
+                        
+                        int latest = 0;
+                        Node latestNode = null;
+                        for (Relationship rel: misc.getRelationships(rType, out)) {
+                            Node thisNode = rel.getEndNode();
+                            int thisDate = 0;
+                            if (thisNode.hasProperty("date")) {
+                                thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                            }
+                            
+                            if (latestNode == null || thisDate > latest) {
+                                latestNode = thisNode;
+                                latest = thisDate;
+                            }
+                        }
+                        
+                        if (latestNode != null) {
+                            addNodeDetailsToResults(latestNode, results, thisLabel);
+                            doneLabels.put(thisLabel, Integer.valueOf(1));
+                            continue qcFilesLoop;
                         }
                     }
-                    if (latestAQCNode != null) {
-                        addNodeDetailsToResults(latestAQCNode, results, "Auto_QC");
+                }
+                
+                // Header_Mistakes nodes are directly attached to the file,
+                // and don't have a date property, so we'll hope it's ok to
+                // get the latest by node id
+                Long latest = Long.valueOf(0);
+                Node latestHeaderNode = null;
+                for (Relationship fhRel: fseWithQC.getRelationships(VrtrackRelationshipTypes.header_mistakes, out)) {
+                    Node header = fhRel.getEndNode();
+                    Long nodeId = header.getId();
+                    
+                    if (nodeId > latest) {
+                        latestHeaderNode = header;
+                        latest = nodeId;
                     }
+                }
+                if (latestHeaderNode != null) {
+                    addNodeDetailsToResults(latestHeaderNode, results, "Header_Mistakes");
+                }
+                
+                // Auto_QC nodes are directly attached to the file and do
+                // have a date property
+                int latestAQC = 0;
+                Node latestAQCNode = null;
+                for (Relationship rel: fseWithQC.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
+                    Node thisNode = rel.getEndNode();
+                    int thisDate = 0;
+                    if (thisNode.hasProperty("date")) {
+                        thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                    }
+                    
+                    if (latestAQCNode == null || thisDate > latestAQC) {
+                        latestAQCNode = thisNode;
+                        latestAQC = thisDate;
+                    }
+                }
+                if (latestAQCNode != null) {
+                    addNodeDetailsToResults(latestAQCNode, results, "Auto_QC");
+                }
+            }
+            
+            tx.success();
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    @GET
+    @Path("/get_or_store_filesystem_paths/{database}/{root}/{paths}") 
+    public Response fsePathsToNodes(@PathParam("database") String database,
+                                    @PathParam("root") String root,
+                                    @PathParam("paths") String pathsStr,
+                                    @DefaultValue("0") @QueryParam("only_get") Integer only_get,
+                                    @Context GraphDatabaseService db) throws IOException {
+        
+        Label fseLabel = DynamicLabel.label(database + "|VRPipe|FileSystemElement");
+        boolean create = true;
+        if (only_get == 1) {
+            create = false;
+        }
+        String[] paths = pathsStr.split("///");
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            for (String path: paths) {
+                Node fse = pathToFSE(db, fseLabel, root, path, create);
+                
+                if (fse != null) {
+                    addNodeDetailsToResults(fse, results, "FileSystemElement");
                 }
             }
             
