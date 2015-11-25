@@ -1169,6 +1169,15 @@ public class Service {
         if (rootNode == null) {
             if (! fseRoots.containsKey(root)) {
                 rootNode = db.findNode(fseLabel, "basename", root);
+                
+                if (rootNode == null && create) {
+                    Map<String, Object> parameters = new HashMap<>();
+                    parameters.put("uuid", String.valueOf(UUID.randomUUID()));
+                    parameters.put("basename", root);
+                    ResourceIterator<Node> resultIterator = db.execute("MERGE (n:`" + fseLabel.name() + "` { uuid: {uuid}, basename: {basename} }) RETURN n", parameters).columnAs( "n" );
+                    rootNode = resultIterator.next();
+                }
+                
                 fseRoots.put(root, rootNode);
             }
         }

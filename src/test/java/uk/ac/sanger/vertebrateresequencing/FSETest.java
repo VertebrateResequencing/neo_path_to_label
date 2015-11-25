@@ -106,6 +106,19 @@ public class FSETest {
         expected.put("0", prop);
         
         assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/get_or_store_filesystem_paths/vdp/ftp/%2F").toString());
+        actual = response.content();
+        prop = (LinkedHashMap<String, Object>)actual.get("12");
+        prop.remove("uuid");
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "ftp");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("12", prop);
+        
+        assertEquals(expected, actual);
     }
     
     public static final String MODEL_STATEMENT =
