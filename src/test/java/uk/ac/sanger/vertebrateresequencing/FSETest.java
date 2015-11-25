@@ -119,6 +119,20 @@ public class FSETest {
         expected.put("12", prop);
         
         assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_to_path/6").toString());
+        actual = response.content();
+        LinkedHashMap<String, String> expectedStrs = new LinkedHashMap<String, String>();
+        expectedStrs.put("path", "/a/b/lane1.cram");
+        expectedStrs.put("root", "/");
+        assertEquals(expectedStrs, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_to_path/7").toString());
+        actual = response.content();
+        expectedStrs = new LinkedHashMap<String, String>();
+        expectedStrs.put("path", "/a/b/lane1.cram");
+        expectedStrs.put("root", "irods:/");
+        assertEquals(expectedStrs, actual);
     }
     
     public static final String MODEL_STATEMENT =

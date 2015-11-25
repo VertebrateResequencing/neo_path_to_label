@@ -1506,4 +1506,51 @@ public class Service {
         
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
+    
+    @GET
+    @Path("/filesystemelement_to_path/{id}") 
+    public Response fsePathsToNodes(@PathParam("id") Long fseId,
+                                    @Context GraphDatabaseService db) throws IOException {
+        
+        HashMap<String, String> results = new HashMap<String, String>();
+        ArrayList<String> basenames = new ArrayList<String>();
+        String rootBasename = "";
+        String path = "";
+        try (Transaction tx = db.beginTx()) {
+            Node leafNode;
+            try {
+                leafNode = db.getNodeById(fseId);
+            }
+            catch (NotFoundException e) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            Node origLeaf = leafNode;
+            basenames.add(leafNode.getProperty("basename", "").toString());
+            
+            Relationship rel = leafNode.getSingleRelationship(VrtrackRelationshipTypes.contains, in);
+            while (rel != null) {
+                leafNode = rel.getStartNode();
+                basenames.add(0, leafNode.getProperty("basename", "").toString());
+                rel = leafNode.getSingleRelationship(VrtrackRelationshipTypes.contains, in);
+            }
+            
+            rootBasename = basenames.remove(0);
+            path = "/" + StringUtils.join(basenames, "/");
+            
+            if (origLeaf.hasProperty("path")) {
+                String storedPath = origLeaf.getProperty("path").toString();
+                if (! path.equals(storedPath)) {
+                    origLeaf.setProperty("path", path);
+                }
+            }
+            
+            results.put("path", path);
+            results.put("root", rootBasename);
+            
+            tx.success();
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
 }
