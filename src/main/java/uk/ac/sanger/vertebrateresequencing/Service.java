@@ -53,7 +53,8 @@ public class Service {
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
         pluritest, pluritest_plot,
-        contains, qc_file, genotype_data, summary_stats, verify_bam_id_data, header_mistakes, auto_qc_status
+        contains, qc_file, genotype_data, summary_stats, verify_bam_id_data, header_mistakes, auto_qc_status,
+        moved_from
     }
     
     private static final Map<RelationshipType, String> fileQCTypes;
@@ -1297,6 +1298,10 @@ public class Service {
                 }
             }
             
+            if (leafNode != null && ! creating) {
+                leafNode.setProperty("path", pathSoFar);
+            }
+            
             return leafNode;
         }
         
@@ -1507,15 +1512,39 @@ public class Service {
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
     
+    private String[] fseToPathAndRoot (Node leafNode) {
+        Node origLeaf = leafNode;
+        
+        ArrayList<String> basenames = new ArrayList<String>();
+        basenames.add(leafNode.getProperty("basename", "").toString());
+        
+        Relationship rel = leafNode.getSingleRelationship(VrtrackRelationshipTypes.contains, in);
+        while (rel != null) {
+            leafNode = rel.getStartNode();
+            basenames.add(0, leafNode.getProperty("basename", "").toString());
+            rel = leafNode.getSingleRelationship(VrtrackRelationshipTypes.contains, in);
+        }
+        
+        String rootBasename = basenames.remove(0);
+        String path = "/" + StringUtils.join(basenames, "/");
+        
+        if (origLeaf.hasProperty("path")) {
+            String storedPath = origLeaf.getProperty("path").toString();
+            if (! path.equals(storedPath)) {
+                origLeaf.setProperty("path", path);
+            }
+        }
+        
+        String[] result = {path, rootBasename};
+        return result;
+    }
+    
     @GET
     @Path("/filesystemelement_to_path/{id}") 
-    public Response fsePathsToNodes(@PathParam("id") Long fseId,
-                                    @Context GraphDatabaseService db) throws IOException {
+    public Response fseToPath(@PathParam("id") Long fseId,
+                              @Context GraphDatabaseService db) throws IOException {
         
         HashMap<String, String> results = new HashMap<String, String>();
-        ArrayList<String> basenames = new ArrayList<String>();
-        String rootBasename = "";
-        String path = "";
         try (Transaction tx = db.beginTx()) {
             Node leafNode;
             try {
@@ -1525,28 +1554,81 @@ public class Service {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
-            Node origLeaf = leafNode;
-            basenames.add(leafNode.getProperty("basename", "").toString());
+            String[] pathAndRoot = fseToPathAndRoot(leafNode);
             
-            Relationship rel = leafNode.getSingleRelationship(VrtrackRelationshipTypes.contains, in);
-            while (rel != null) {
-                leafNode = rel.getStartNode();
-                basenames.add(0, leafNode.getProperty("basename", "").toString());
-                rel = leafNode.getSingleRelationship(VrtrackRelationshipTypes.contains, in);
-            }
+            results.put("path", pathAndRoot[0]);
+            results.put("root", pathAndRoot[1]);
             
-            rootBasename = basenames.remove(0);
-            path = "/" + StringUtils.join(basenames, "/");
+            tx.success();
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    @GET
+    @Path("/filesystemelement_move/{database}/{sourceIdOrPath}/{destRoot}/{destDir}/{destBasename}") 
+    public Response fseMove(@PathParam("database") String database,
+                            @PathParam("sourceIdOrPath") String sourceIdOrPath,
+                            @PathParam("destRoot") String destRoot,
+                            @PathParam("destDir") String destDir,
+                            @PathParam("destBasename") String destBasename,
+                            @QueryParam("source_root") String sourceRoot,
+                            @Context GraphDatabaseService db) throws IOException {
+        
+        Label fseLabel = DynamicLabel.label(database + "|VRPipe|FileSystemElement");
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            Node sourceNode = null;
             
-            if (origLeaf.hasProperty("path")) {
-                String storedPath = origLeaf.getProperty("path").toString();
-                if (! path.equals(storedPath)) {
-                    origLeaf.setProperty("path", path);
+            String origSourcePath = "";
+            if (sourceIdOrPath.matches("^\\d+$")) {
+                try {
+                    sourceNode = db.getNodeById(Long.parseLong(sourceIdOrPath));
                 }
+                catch (NotFoundException e) {
+                    return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+                }
+                
+                String[] pathAndRoot = fseToPathAndRoot(sourceNode);
+                origSourcePath = pathAndRoot[0];
+                sourceRoot = pathAndRoot[1];
+            }
+            else if (sourceRoot != null) {
+                sourceNode = pathToFSE(db, database, fseLabel, sourceRoot, sourceIdOrPath, false);
+                origSourcePath = sourceIdOrPath;
             }
             
-            results.put("path", path);
-            results.put("root", rootBasename);
+            if (sourceNode == null) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            Node destDirNode = pathToFSE(db, database, fseLabel, destRoot, destDir, true);
+            
+            // remove existing contains rel pointing to source
+            Relationship rel = sourceNode.getSingleRelationship(VrtrackRelationshipTypes.contains, in);
+            rel.delete();
+            
+            // create a rel from destDir to source
+            destDirNode.createRelationshipTo(sourceNode, VrtrackRelationshipTypes.contains);
+            
+            // update basename and path on source
+            sourceNode.setProperty("path", destDir + "/" + destBasename);
+            sourceNode.setProperty("basename", destBasename);
+            
+            // create a node at the original source location so that we can say
+            // we were moved from there
+            Node movedFromNode = pathToFSE(db, database, fseLabel, sourceRoot, origSourcePath, true);
+            sourceNode.createRelationshipTo(movedFromNode, VrtrackRelationshipTypes.moved_from);
+            
+            // also transfer any moved_from rels from sourceNode to movedFromNode
+            for (Relationship mrel : sourceNode.getRelationships(VrtrackRelationshipTypes.moved_from, in)) {
+                Node movedNode = mrel.getStartNode();
+                mrel.delete();
+                movedNode.createRelationshipTo(movedFromNode, VrtrackRelationshipTypes.moved_from);
+            }
+            
+            addNodeDetailsToResults(sourceNode, results, "FileSystemElement");
             
             tx.success();
         }

@@ -133,6 +133,46 @@ public class FSETest {
         expectedStrs.put("path", "/a/b/lane1.cram");
         expectedStrs.put("root", "irods:/");
         assertEquals(expectedStrs, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_move/vdp/7/irods%3A%2F/%2Fa%2Fe/lane1.cram").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "lane1.cram");
+        prop.put("path", "/a/e/lane1.cram");
+        prop.put("md5", "md5irods");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("7", prop);
+        
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_to_path/7").toString());
+        actual = response.content();
+        expectedStrs = new LinkedHashMap<String, String>();
+        expectedStrs.put("path", "/a/e/lane1.cram");
+        expectedStrs.put("root", "irods:/");
+        assertEquals(expectedStrs, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_move/vdp/%2Fa%2Fe%2Flane1.cram/%2F/%2Fa%2Ff/lane1a.cram?source_root=irods%3A%2F").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "lane1a.cram");
+        prop.put("path", "/a/f/lane1a.cram");
+        prop.put("md5", "md5irods");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("7", prop);
+        
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_to_path/7").toString());
+        actual = response.content();
+        expectedStrs = new LinkedHashMap<String, String>();
+        expectedStrs.put("path", "/a/f/lane1a.cram");
+        expectedStrs.put("root", "/");
+        assertEquals(expectedStrs, actual);
     }
     
     public static final String MODEL_STATEMENT =
