@@ -54,7 +54,7 @@ public class Service {
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
         pluritest, pluritest_plot,
         contains, qc_file, genotype_data, summary_stats, verify_bam_id_data, header_mistakes, auto_qc_status,
-        moved_from
+        moved_from, symlink, copy
     }
     
     private static final Map<RelationshipType, String> fileQCTypes;
@@ -1181,7 +1181,9 @@ public class Service {
                     rootNode = resultIterator.next();
                 }
                 
-                fseRoots.put(root, rootNode);
+                if (rootNode != null) {
+                    fseRoots.put(root, rootNode);
+                }
             }
         }
         else {
@@ -1206,7 +1208,9 @@ public class Service {
                         rootNode = resultIterator.next();
                     }
                     
-                    fseRoots.put(root, rootNode);
+                    if (rootNode != null) {
+                        fseRoots.put(root, rootNode);
+                    }
                 }
             }
             
@@ -1252,9 +1256,8 @@ public class Service {
                                 rootNode = resultIterator.next();
                             }
                             
-                            fseRoots.put(root, rootNode);
-                            
                             if (rootNode != null) {
+                                fseRoots.put(root, rootNode);
                                 leafNode = rootNode;
                                 
                                 for (Relationship dfRel: leafNode.getRelationships(VrtrackRelationshipTypes.contains, out)) {
@@ -1565,6 +1568,31 @@ public class Service {
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
     
+    private Object[] fseSourceToNode (GraphDatabaseService db, String sourceIdOrPath, String database, String sourceRoot, Label fseLabel) {
+        Node sourceNode = null;
+        
+        String origSourcePath = "";
+        if (sourceIdOrPath.matches("^\\d+$") && sourceRoot == null) {
+            try {
+                sourceNode = db.getNodeById(Long.parseLong(sourceIdOrPath));
+            }
+            catch (NotFoundException e) {
+                return null;
+            }
+            
+            String[] pathAndRoot = fseToPathAndRoot(sourceNode);
+            origSourcePath = pathAndRoot[0];
+            sourceRoot = pathAndRoot[1];
+        }
+        else if (sourceRoot != null) {
+            sourceNode = pathToFSE(db, database, fseLabel, sourceRoot, sourceIdOrPath, false);
+            origSourcePath = sourceIdOrPath;
+        }
+        
+        Object[] result = new Object[]{sourceNode, origSourcePath, sourceRoot};
+        return result;
+    }
+    
     @GET
     @Path("/filesystemelement_move/{database}/{sourceIdOrPath}/{destRoot}/{destDir}/{destBasename}") 
     public Response fseMove(@PathParam("database") String database,
@@ -1579,25 +1607,10 @@ public class Service {
         
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         try (Transaction tx = db.beginTx()) {
-            Node sourceNode = null;
-            
-            String origSourcePath = "";
-            if (sourceIdOrPath.matches("^\\d+$")) {
-                try {
-                    sourceNode = db.getNodeById(Long.parseLong(sourceIdOrPath));
-                }
-                catch (NotFoundException e) {
-                    return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
-                }
-                
-                String[] pathAndRoot = fseToPathAndRoot(sourceNode);
-                origSourcePath = pathAndRoot[0];
-                sourceRoot = pathAndRoot[1];
-            }
-            else if (sourceRoot != null) {
-                sourceNode = pathToFSE(db, database, fseLabel, sourceRoot, sourceIdOrPath, false);
-                origSourcePath = sourceIdOrPath;
-            }
+            Object[] fstnResult = fseSourceToNode(db, sourceIdOrPath, database, sourceRoot, fseLabel);
+            Node sourceNode = (Node)fstnResult[0];
+            String origSourcePath = (String)fstnResult[1];
+            sourceRoot = (String)fstnResult[2];
             
             if (sourceNode == null) {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1629,6 +1642,93 @@ public class Service {
             }
             
             addNodeDetailsToResults(sourceNode, results, "FileSystemElement");
+            
+            tx.success();
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    @GET
+    @Path("/filesystemelement_duplicate/{database}/{sourceIdOrPath}/{destRoot}/{destPath}/{relation}") 
+    public Response fseDup(@PathParam("database") String database,
+                            @PathParam("sourceIdOrPath") String sourceIdOrPath,
+                            @PathParam("destRoot") String destRoot,
+                            @PathParam("destPath") String destPath,
+                            @PathParam("relation") String relation,
+                            @QueryParam("source_root") String sourceRoot,
+                            @Context GraphDatabaseService db) throws IOException {
+        
+        Label fseLabel = DynamicLabel.label(database + "|VRPipe|FileSystemElement");
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        
+        RelationshipType rel = null;
+        switch (relation.toLowerCase()) {
+            case "symlink":
+                rel = VrtrackRelationshipTypes.symlink;
+                break;
+            case "copy":
+                rel = VrtrackRelationshipTypes.copy;
+                break;
+            default:
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+        }
+        
+        try (Transaction tx = db.beginTx()) {
+            Object[] fstnResult = fseSourceToNode(db, sourceIdOrPath, database, sourceRoot, fseLabel);
+            Node sourceNode = (Node)fstnResult[0];
+            
+            if (sourceNode == null) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            Node dupNode = pathToFSE(db, database, fseLabel, destRoot, destPath, true);
+            
+            sourceNode.createRelationshipTo(dupNode, rel);
+            
+            addNodeDetailsToResults(dupNode, results, "FileSystemElement");
+            
+            tx.success();
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    @GET
+    @Path("/filesystemelement_parent/{database}/{sourceIdOrPath}") 
+    public Response fseDup(@PathParam("database") String database,
+                            @PathParam("sourceIdOrPath") String sourceIdOrPath,
+                            @QueryParam("source_root") String sourceRoot,
+                            @Context GraphDatabaseService db) throws IOException {
+        
+        Label fseLabel = DynamicLabel.label(database + "|VRPipe|FileSystemElement");
+        
+        HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
+        try (Transaction tx = db.beginTx()) {
+            Object[] fstnResult = fseSourceToNode(db, sourceIdOrPath, database, sourceRoot, fseLabel);
+            Node sourceNode = (Node)fstnResult[0];
+            
+            if (sourceNode == null) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            // follow back along symlink or copy rels to earliest fse
+            Node parent = sourceNode;
+            
+            Relationship rel = parent.getSingleRelationship(VrtrackRelationshipTypes.symlink, in);
+            if (rel == null) {
+                rel = parent.getSingleRelationship(VrtrackRelationshipTypes.copy, in);
+            }
+            while (rel != null) {
+                parent = rel.getStartNode();
+                rel = parent.getSingleRelationship(VrtrackRelationshipTypes.symlink, in);
+                if (rel == null) {
+                    rel = parent.getSingleRelationship(VrtrackRelationshipTypes.copy, in);
+                }
+            }
+            
+            addNodeDetailsToResults(parent, results, "FileSystemElement");
             
             tx.success();
         }

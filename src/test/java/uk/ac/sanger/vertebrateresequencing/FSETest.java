@@ -134,6 +134,7 @@ public class FSETest {
         expectedStrs.put("root", "irods:/");
         assertEquals(expectedStrs, actual);
         
+        // move
         response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_move/vdp/7/irods%3A%2F/%2Fa%2Fe/lane1.cram").toString());
         actual = response.content();
         
@@ -173,6 +174,62 @@ public class FSETest {
         expectedStrs.put("path", "/a/f/lane1a.cram");
         expectedStrs.put("root", "/");
         assertEquals(expectedStrs, actual);
+        
+        // duplicate
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_duplicate/vdp/%2Fa%2Fb%2Flane2.cram/%2F/%2Fimports%2Fa%2Fb%2Flane2.cram/copy?source_root=irods%3A%2F").toString());
+        actual = response.content();
+        prop = (LinkedHashMap<String, Object>)actual.get("20");
+        prop.remove("uuid");
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "lane2.cram");
+        prop.put("path", "/imports/a/b/lane2.cram");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("20", prop);
+        
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_duplicate/vdp/20/%2F/%2Fworking%2Fa%2Fb%2Flane2.cram/symlink").toString());
+        actual = response.content();
+        prop = (LinkedHashMap<String, Object>)actual.get("24");
+        uuid = (String)prop.remove("uuid");
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "lane2.cram");
+        prop.put("path", "/working/a/b/lane2.cram");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("24", prop);
+        
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_move/vdp/24/%2F/%2Fnewdisk%2Fa%2Fb/lane2.cram").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "lane2.cram");
+        prop.put("path", "/newdisk/a/b/lane2.cram");
+        prop.put("uuid", uuid);
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("24", prop);
+        
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/filesystemelement_parent/vdp/24").toString());
+        actual = response.content();
+        prop = (LinkedHashMap<String, Object>)actual.get("8");
+        prop.remove("uuid");
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("basename", "lane2.cram");
+        prop.put("path", "/a/b/lane2.cram");
+        prop.put("neo4j_label", "FileSystemElement");
+        expected.put("8", prop);
+        
+        assertEquals(expected, actual);
     }
     
     public static final String MODEL_STATEMENT =
