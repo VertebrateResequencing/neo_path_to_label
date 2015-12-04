@@ -191,8 +191,6 @@ public class Service {
             for (Node node : nodes) {
                 addNodeDetailsToResults(node, results);
             }
-            
-            tx.success();
         }
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
@@ -338,8 +336,6 @@ public class Service {
             }
             
             getSequencingHierarchy(lane, results, taxonLabel, studyLabel);
-            
-            tx.success();
         }
 
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -803,7 +799,9 @@ public class Service {
                 donorDetails.put(key, plot.getProperty("path").toString());
             }
             
-            tx.success();
+            if (setSampleQC) {
+                tx.success();
+            }
         }
         
         HashMap<String, Object> adminDetails = new HashMap<String, Object>();
@@ -962,8 +960,6 @@ public class Service {
             
             addNodeDetailsToResults(node, results);
             addExtraVRTrackInfo(node, results.get(node.getId()), donorLabel, sampleLabel, studyLabel);
-            
-            tx.success();
         }
 
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1135,8 +1131,6 @@ public class Service {
                     }
                 }
             }
-            
-            tx.success();
         }
 
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1197,7 +1191,7 @@ public class Service {
                 try {
                     rootNode.hasRelationship(VrtrackRelationshipTypes.contains, out);
                 }
-                catch (org.neo4j.graphdb.DatabaseShutdownException|org.neo4j.graphdb.NotFoundException e) {
+                catch (org.neo4j.graphdb.DatabaseShutdownException|org.neo4j.graphdb.NotFoundException err) {
                     rootNode = db.findNode(fseLabel, "basename", root);
                     
                     if (rootNode == null && create) {
@@ -1240,7 +1234,7 @@ public class Service {
                             }
                         }
                     }
-                    catch (org.neo4j.graphdb.DatabaseShutdownException|org.neo4j.graphdb.NotFoundException e) {
+                    catch (org.neo4j.graphdb.DatabaseShutdownException|org.neo4j.graphdb.NotFoundException err) {
                         // possibly only happens in testing, but if we store
                         // root nodes and then the db gets "shutdown" and we
                         // reconnect, the stored root nodes will no longer work,
@@ -1477,8 +1471,6 @@ public class Service {
                     addNodeDetailsToResults(latestAQCNode, results, "Auto_QC");
                 }
             }
-            
-            tx.success();
         }
         
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1491,7 +1483,6 @@ public class Service {
                                     @PathParam("paths") String pathsStr,
                                     @DefaultValue("0") @QueryParam("only_get") Integer only_get,
                                     @Context GraphDatabaseService db) throws IOException {
-        
         Label fseLabel = DynamicLabel.label(database + "|VRPipe|FileSystemElement");
         boolean create = true;
         if (only_get == 1) {
@@ -1503,13 +1494,14 @@ public class Service {
         try (Transaction tx = db.beginTx()) {
             for (String path: paths) {
                 Node fse = pathToFSE(db, database, fseLabel, root, path, create);
-                
                 if (fse != null) {
                     addNodeDetailsToResults(fse, results, "FileSystemElement");
                 }
             }
             
-            tx.success();
+            if (create) {
+                tx.success();
+            }
         }
         
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1561,8 +1553,6 @@ public class Service {
             
             results.put("path", pathAndRoot[0]);
             results.put("root", pathAndRoot[1]);
-            
-            tx.success();
         }
         
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1729,8 +1719,6 @@ public class Service {
             }
             
             addNodeDetailsToResults(parent, results, "FileSystemElement");
-            
-            tx.success();
         }
         
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
