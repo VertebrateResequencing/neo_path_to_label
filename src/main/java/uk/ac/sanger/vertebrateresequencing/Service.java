@@ -1602,7 +1602,7 @@ public class Service {
             String origSourcePath = (String)fstnResult[1];
             sourceRoot = (String)fstnResult[2];
             
-            if (sourceNode == null) {
+            if (sourceNode == null || (sourceRoot.equals(destRoot) && origSourcePath.equals(destDir + "/" + destBasename))) {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
@@ -1622,6 +1622,10 @@ public class Service {
             // create a node at the original source location so that we can say
             // we were moved from there
             Node movedFromNode = pathToFSE(db, database, fseLabel, sourceRoot, origSourcePath, true);
+            rel = sourceNode.getSingleRelationship(VrtrackRelationshipTypes.moved_from, out);
+            if (rel != null) {
+                rel.delete();
+            }
             sourceNode.createRelationshipTo(movedFromNode, VrtrackRelationshipTypes.moved_from);
             
             // also transfer any moved_from rels from sourceNode to movedFromNode
@@ -1653,13 +1657,13 @@ public class Service {
         
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
         
-        RelationshipType rel = null;
+        RelationshipType relType = null;
         switch (relation.toLowerCase()) {
             case "symlink":
-                rel = VrtrackRelationshipTypes.symlink;
+                relType = VrtrackRelationshipTypes.symlink;
                 break;
             case "copy":
-                rel = VrtrackRelationshipTypes.copy;
+                relType = VrtrackRelationshipTypes.copy;
                 break;
             default:
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1668,14 +1672,20 @@ public class Service {
         try (Transaction tx = db.beginTx()) {
             Object[] fstnResult = fseSourceToNode(db, sourceIdOrPath, database, sourceRoot, fseLabel);
             Node sourceNode = (Node)fstnResult[0];
+            String origSourcePath = (String)fstnResult[1];
+            sourceRoot = (String)fstnResult[2];
             
-            if (sourceNode == null) {
+            if (sourceNode == null || (sourceRoot.equals(destRoot) && origSourcePath.equals(destPath))) {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
             Node dupNode = pathToFSE(db, database, fseLabel, destRoot, destPath, true);
             
-            sourceNode.createRelationshipTo(dupNode, rel);
+            Relationship oldRel = dupNode.getSingleRelationship(relType, in);
+            if (oldRel != null) {
+                oldRel.delete();
+            }
+            sourceNode.createRelationshipTo(dupNode, relType);
             
             addNodeDetailsToResults(dupNode, results, "FileSystemElement");
             
