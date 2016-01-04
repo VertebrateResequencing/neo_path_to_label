@@ -238,11 +238,15 @@ public class Service {
                     addNodeDetailsToResults(lane, results, "Section");
                 }
                 
-                rel = lane.getSingleRelationship(VrtrackRelationshipTypes.placed, in);
-                if (rel != null) {
-                    sample = rel.getStartNode();
+                // some sections have 2 (or more?) samples placed in them,
+                // resulting in irods gtc files with metadata for 2+ samples...
+                // we'll just pick one of the samples at random
+                for (Relationship pRel : lane.getRelationships(VrtrackRelationshipTypes.placed, in)) {
+                    sample = pRel.getStartNode();
+                    break;
                 }
-                else {
+                
+                if (sample == null) {
                     return;
                 }
             }
@@ -1327,11 +1331,24 @@ public class Service {
             if (leafNode != null) {
                 addNodeDetailsToResults(leafNode, results, "FileSystemElement");
                 
+                // we're going to try and look for the closest lane/section, but
+                // want to ignore these if they are via some bizzare route and
+                // aren't for the closest sample, so first we get the closest
+                // sample
+                String sampleLabel = database + "|VRTrack|Sample";
+                List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, leafNode, results, sampleLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                Node closestSample = null;
+                org.neo4j.graphdb.Path pathToClosestSample = null;
+                if (paths.size() == 1) {
+                    pathToClosestSample = paths.get(0);
+                    closestSample = pathToClosestSample.endNode();
+                }
+                
                 // get the closest Lane or Section node, and the FSE that
                 // has qc_file relationships
                 Node fseWithQC = null;
                 String laneOrSectionLabel = database + "|VRTrack|Lane";
-                List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
                 if (paths.size() != 1) {
                     laneOrSectionLabel = database + "|VRTrack|Section";
                     paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
@@ -1339,54 +1356,74 @@ public class Service {
                 if (paths.size() == 1) {
                     org.neo4j.graphdb.Path laneOrSectionPath = paths.get(0);
                     Node laneOrSection = laneOrSectionPath.endNode();
-                    addNodeDetailsToResults(laneOrSection, results, laneOrSectionLabel);
                     
-                    // add all the hierarchy nodes
-                    getSequencingHierarchy(laneOrSection, results, taxonLabel, studyLabel);
-                    
-                    // if there were multiple FSEs between leafNode and
-                    // laneOrSection, we want to combine the properties of
-                    // all of them on our single output FSE
-                    Long leafNodeId = leafNode.getId();
-                    HashMap<String, Object> fseProps = results.get(leafNodeId);
-                    for (Node pathNode: laneOrSectionPath.reverseNodes()) {
-                        if (pathNode.hasLabel(fseLabel)) {
-                            if (pathNode.hasRelationship(VrtrackRelationshipTypes.qc_file, out)) {
-                                fseWithQC = pathNode;
-                            }
-                            
-                            for (String property : pathNode.getPropertyKeys()) {
-                                fseProps.put(property, pathNode.getProperty(property));
-                            }
-                        }
-                    }
-                }
-                else {
-                    // we could also be dealing with a sequenom|fluidgm
-                    // result file that is directly attached to sample
-                    laneOrSectionLabel = database + "|VRTrack|Sample";
-                    paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    // sanity check the sample
+                    paths = getClosestPaths(db, laneOrSection, results, sampleLabel, in, 5, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    Node thisSample = null;
                     if (paths.size() == 1) {
-                        org.neo4j.graphdb.Path sequenomPath = paths.get(0);
+                        org.neo4j.graphdb.Path pathToSample = paths.get(0);
+                        thisSample = pathToSample.endNode();
+                    }
+                    
+                    if (thisSample != null && thisSample.getId() == closestSample.getId()) {
+                        addNodeDetailsToResults(laneOrSection, results, laneOrSectionLabel);
                         
-                        // get the csv file that is 1 away from endNode
-                        // (sample), so we can get the hierarchy from there
-                        int count = 0;
+                        // add all the hierarchy nodes
+                        getSequencingHierarchy(laneOrSection, results, taxonLabel, studyLabel);
+                        
+                        // if there were multiple FSEs between leafNode and
+                        // laneOrSection, we want to combine the properties of
+                        // all of them on our single output FSE
                         Long leafNodeId = leafNode.getId();
                         HashMap<String, Object> fseProps = results.get(leafNodeId);
-                        for (Node pathNode: sequenomPath.reverseNodes()) {
-                            count++;
+                        for (Node pathNode: laneOrSectionPath.reverseNodes()) {
                             if (pathNode.hasLabel(fseLabel)) {
-                                if (count == 2) {
-                                    if (pathNode.hasRelationship(VrtrackRelationshipTypes.processed, in)) {
-                                        getSequencingHierarchy(pathNode, results, taxonLabel, studyLabel);
-                                    }
+                                if (pathNode.hasRelationship(VrtrackRelationshipTypes.qc_file, out)) {
+                                    fseWithQC = pathNode;
                                 }
                                 
                                 for (String property : pathNode.getPropertyKeys()) {
                                     fseProps.put(property, pathNode.getProperty(property));
                                 }
                             }
+                        }
+                        
+                        pathToClosestSample = null;
+                    }
+                }
+                
+                if (pathToClosestSample != null) {
+                    // we could also be dealing with a sequenom|fluidgm
+                    // result file that is directly attached to sample, or a
+                    // array file that is related via a section;
+                    // get the fse that is 1 or 2 away from closestSample
+                    // so we can get the hierarchy from there
+                    int count = 0;
+                    boolean found = false;
+                    Node prevNode = null;
+                    Long leafNodeId = leafNode.getId();
+                    HashMap<String, Object> fseProps = results.get(leafNodeId);
+                    for (Node pathNode: pathToClosestSample.reverseNodes()) {
+                        count++;
+                        if (pathNode.hasLabel(fseLabel)) {
+                            if (count == 2) {
+                                if (pathNode.hasRelationship(VrtrackRelationshipTypes.processed, in)) {
+                                    getSequencingHierarchy(pathNode, results, taxonLabel, studyLabel);
+                                    found = true;
+                                }
+                            }
+                            else if (count == 3 && ! found) {
+                                if (pathNode.hasRelationship(VrtrackRelationshipTypes.processed, in)) {
+                                    getSequencingHierarchy(prevNode, results, taxonLabel, studyLabel);
+                                }
+                            }
+                            
+                            for (String property : pathNode.getPropertyKeys()) {
+                                fseProps.put(property, pathNode.getProperty(property));
+                            }
+                        }
+                        else {
+                            prevNode = pathNode;
                         }
                     }
                 }
