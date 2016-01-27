@@ -51,14 +51,14 @@ public class VRTrackFilesTest {
                 }
                 
                 HashMap<String, String> fileProps = new LinkedHashMap<String, String>();
-                fileProps.put("FileSystemElement_basename", "lan" + lanId + ".cram");
-                fileProps.put("FileSystemElement_md5", "lan" + lanId + "md5");
+                fileProps.put("basename", "lan" + lanId + ".cram");
+                fileProps.put("md5", "lan" + lanId + "md5");
                 
                 if (lanId == 2 || lanId == 12) {
-                    fileProps.put("FileSystemElement_manual_qc", "0");
+                    fileProps.put("manual_qc", "0");
                 }
                 else {
-                    fileProps.put("FileSystemElement_manual_qc", "1");
+                    fileProps.put("manual_qc", "1");
                 }
                 
                 fseID = lanId + 33;
@@ -68,33 +68,33 @@ public class VRTrackFilesTest {
                 if (lanId > 4 && lanId < 8) {
                     fseID++;
                 }
-                fileProps.put("FileSystemElement_node_id", fseID + "");
-                fileResult.put("file_properties", fileProps);
+                fileProps.put("node_id", fseID + "");
+                fileResult.put("properties", fileProps);
                 
                 HashMap<String, String> hierarchyProps = new HashMap<String, String>();
-                hierarchyProps.put("Study_id", studyId + "");
-                hierarchyProps.put("Lane_name", "lan" + lanId);
+                hierarchyProps.put("study_id", studyId + "");
+                hierarchyProps.put("lane_name", "lan" + lanId);
                 if (lanId == 1) {
-                    hierarchyProps.put("Lane_vrtrack_qc", "PASS");
+                    hierarchyProps.put("lane_vrtrack_qc", "PASS");
                 }
                 else if (lanId == 2) {
-                    hierarchyProps.put("Lane_vrtrack_qc", "FAIL");
+                    hierarchyProps.put("lane_vrtrack_qc", "FAIL");
                 }
                 else if (lanId == 3) {
-                    hierarchyProps.put("Lane_vrtrack_qc", "MAYBE");
+                    hierarchyProps.put("lane_vrtrack_qc", "MAYBE");
                 }
-                hierarchyProps.put("Sample_name", "s" + sampleId);
-                hierarchyProps.put("Taxon_name", "tax1");
-                hierarchyProps.put("Library_name", "lib" + libId);
-                hierarchyProps.put("Gender_name", "gen" + genId);
+                hierarchyProps.put("sample_name", "s" + sampleId);
+                hierarchyProps.put("taxon_name", "tax1");
+                hierarchyProps.put("library_name", "lib" + libId);
+                hierarchyProps.put("gender_name", "gen" + genId);
                 if (sampleId == 1) {
-                    hierarchyProps.put("Donor_id", "d1");
+                    hierarchyProps.put("donor_id", "d1");
                 }
                 else if (sampleId == 2) {
-                    hierarchyProps.put("Sample_qc_failed", "0");
+                    hierarchyProps.put("sample_qc_failed", "0");
                 }
                 else if (sampleId == 3) {
-                    hierarchyProps.put("Sample_qc_failed", "1");
+                    hierarchyProps.put("sample_qc_failed", "1");
                 }
                 fileResult.put("hierarchy", hierarchyProps);
                 

@@ -1783,7 +1783,12 @@ public class Service {
             Object val = node.getProperty(pKey);
             if (val instanceof String) {
                 String valStr = (String) val;
-                props.put(label + "_" + pKey, valStr);
+                if (label.equals("FileSystemElement")) {
+                    props.put(pKey, valStr);
+                }
+                else {
+                    props.put(label + "_" + pKey, valStr);
+                }
             }
         }
     }
@@ -2028,7 +2033,7 @@ public class Service {
             // Sample#qc_failed#0,Sample#created_date#1426150152
             for (String filter: pf.split(",")) {
                 String[] parts = filter.split("#");
-                String label = parts[0];
+                String label = parts[0].toLowerCase();
                 
                 HashMap<String, ArrayList<String>> labelMap = parentFilters.get(label);
                 if (labelMap == null) {
@@ -2179,16 +2184,16 @@ public class Service {
                 
                 HashMap<String, String> fileProps = new HashMap<String, String>();
                 addHierarchyNodeProps(alignFile, "FileSystemElement", fileProps);
-                String alignPath = fileProps.remove("FileSystemElement_path");
-                fileProps.put("FileSystemElement_node_id", String.valueOf(alignFile.getId()));
-                fileResult.put("file_properties", fileProps);
+                String alignPath = fileProps.remove("path");
+                fileProps.put("node_id", String.valueOf(alignFile.getId()));
+                fileResult.put("properties", fileProps);
                 
                 // walk up the hierarchy and store hierarchy info
                 HashMap<String, String> hierarchyProps = new HashMap<String, String>();
-                addHierarchyNodeProps(lane, "Lane", hierarchyProps);
+                addHierarchyNodeProps(lane, "lane", hierarchyProps);
                 
                 // if there's a parent filter on lanes, filter on that now
-                if (! passesVRTrackFilesParentFilter(parentFilters, "Lane", hierarchyProps)) {
+                if (! passesVRTrackFilesParentFilter(parentFilters, "lane", hierarchyProps)) {
                     failedPF++;
                     continue;
                 }
@@ -2196,8 +2201,8 @@ public class Service {
                 Relationship rel = lane.getSingleRelationship(VrtrackRelationshipTypes.sequenced, in);
                 if (rel != null) {
                     Node lib = rel.getStartNode();
-                    addHierarchyNodeProps(lib, "Library", hierarchyProps);
-                    if (! passesVRTrackFilesParentFilter(parentFilters, "Library", hierarchyProps)) {
+                    addHierarchyNodeProps(lib, "library", hierarchyProps);
+                    if (! passesVRTrackFilesParentFilter(parentFilters, "library", hierarchyProps)) {
                         failedPF++;
                         continue;
                     }
@@ -2205,16 +2210,16 @@ public class Service {
                     rel = lib.getSingleRelationship(VrtrackRelationshipTypes.prepared, in);
                     if (rel != null) {
                         Node sample = rel.getStartNode();
-                        addHierarchyNodeProps(sample, "Sample", hierarchyProps);
-                        if (! passesVRTrackFilesParentFilter(parentFilters, "Sample", hierarchyProps)) {
+                        addHierarchyNodeProps(sample, "sample", hierarchyProps);
+                        if (! passesVRTrackFilesParentFilter(parentFilters, "sample", hierarchyProps)) {
                             failedPF++;
                             continue;
                         }
                         
                         for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
                             Node gender = grel.getEndNode();
-                            addHierarchyNodeProps(gender, "Gender", hierarchyProps);
-                            if (! passesVRTrackFilesParentFilter(parentFilters, "Gender", hierarchyProps)) {
+                            addHierarchyNodeProps(gender, "gender", hierarchyProps);
+                            if (! passesVRTrackFilesParentFilter(parentFilters, "gender", hierarchyProps)) {
                                 failedPF++;
                                 continue LANE;
                             }
@@ -2224,8 +2229,8 @@ public class Service {
                         rel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
                         if (rel != null) {
                             Node donor = rel.getStartNode();
-                            addHierarchyNodeProps(donor, "Donor", hierarchyProps);
-                            if (! passesVRTrackFilesParentFilter(parentFilters, "Donor", hierarchyProps)) {
+                            addHierarchyNodeProps(donor, "donor", hierarchyProps);
+                            if (! passesVRTrackFilesParentFilter(parentFilters, "donor", hierarchyProps)) {
                                 failedPF++;
                                 continue;
                             }
@@ -2235,7 +2240,7 @@ public class Service {
                         rel = lane.getSingleRelationship(VrtrackRelationshipTypes.created_for, out);
                         if (rel != null) {
                             directlyAttachedStudy = rel.getEndNode();
-                            addHierarchyNodeProps(directlyAttachedStudy, "Study", hierarchyProps);
+                            addHierarchyNodeProps(directlyAttachedStudy, "study", hierarchyProps);
                         }
                         
                         Node preferredStudy = null;
@@ -2244,8 +2249,8 @@ public class Service {
                             Node parent = mrel.getStartNode();
                             
                             if (parent.hasLabel(taxonLabel)) {
-                                addHierarchyNodeProps(parent, "Taxon", hierarchyProps);
-                                if (! passesVRTrackFilesParentFilter(parentFilters, "Taxon", hierarchyProps)) {
+                                addHierarchyNodeProps(parent, "taxon", hierarchyProps);
+                                if (! passesVRTrackFilesParentFilter(parentFilters, "taxon", hierarchyProps)) {
                                     failedPF++;
                                     continue LANE;
                                 }
@@ -2255,7 +2260,7 @@ public class Service {
                                     String pref = mrel.getProperty("preferred").toString();
                                     if (pref.equals("1")) {
                                         preferredStudy = parent;
-                                        addHierarchyNodeProps(preferredStudy, "Study", hierarchyProps);
+                                        addHierarchyNodeProps(preferredStudy, "study", hierarchyProps);
                                     }
                                 }
                                 else if (anyStudy == null) {
@@ -2265,10 +2270,10 @@ public class Service {
                         }
                         
                         if (preferredStudy == null && anyStudy != null) {
-                            addHierarchyNodeProps(anyStudy, "Study", hierarchyProps);
+                            addHierarchyNodeProps(anyStudy, "study", hierarchyProps);
                         }
                         
-                        if (! passesVRTrackFilesParentFilter(parentFilters, "Study", hierarchyProps)) {
+                        if (! passesVRTrackFilesParentFilter(parentFilters, "study", hierarchyProps)) {
                             failedPF++;
                             continue;
                         }
