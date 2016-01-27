@@ -30,6 +30,7 @@ cypher.
 	:GET /v1/service/get_node_with_extra_info/{db_lable}/{node_id}
 	:GET /v1/service/vrtrack_nodes/{db_label}/{label}
 	:GET /v1/service/vrtrack_file_qc/{db_label}/{enrypted_root}/{file_path}
+	:GET /v1/service/vrtrack_alignment_files/{db_label}/Study%23id%231%2C2/.cram?parent_filter=Sample%23qc_failed%230
         
 # COPYRIGHT & LICENSE
 

@@ -48,7 +48,7 @@ public class Service {
     }
     
     enum VrtrackRelationshipTypes implements RelationshipType {
-        sequenced, prepared, gender, member, sample, placed, section, has, created_for,
+        sequenced, prepared, gender, member, sample, placed, section, has, created_for, aligned,
         administers, failed_by, selected_by, passed_by, processed, imported,
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
@@ -71,7 +71,7 @@ public class Service {
     
     private static Map<String, Node> fseRoots = new HashMap<String, Node>();
     
-    private List<org.neo4j.graphdb.Path> getClosestPaths (GraphDatabaseService db, Node start, HashMap<Long, HashMap<String, Object>> results, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
+    private List<org.neo4j.graphdb.Path> getClosestPaths (GraphDatabaseService db, Node start, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
         LabelEvaluator labelEvaluator = new LabelEvaluator(DynamicLabel.label(label), start.getId());
         PathExpander pathExpander = PathExpanderBuilder.allTypes(direction).build();
         
@@ -126,8 +126,8 @@ public class Service {
         return paths;
     }
     
-    private List<Node> getClosestNodes (GraphDatabaseService db, Node start, HashMap<Long, HashMap<String, Object>> results, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
-        List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, start, results, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
+    private List<Node> getClosestNodes (GraphDatabaseService db, Node start, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
+        List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, start, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
         List<Node> nodes = new ArrayList<Node>();
         for (org.neo4j.graphdb.Path path: paths) {
             nodes.add(path.endNode());
@@ -186,7 +186,7 @@ public class Service {
                 return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
             }
             
-            List<Node> nodes = getClosestNodes(db, start, results, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
+            List<Node> nodes = getClosestNodes(db, start, label, direction, depth, all, check_literal_props, check_regex_props, properties_literal, properties_regex);
             
             for (Node node : nodes) {
                 addNodeDetailsToResults(node, results);
@@ -383,14 +383,14 @@ public class Service {
     
     @GET
     @Path("/donor_qc/{database}/{user}/{id}") 
-    public Response getSequencingHierarchy(@PathParam("database") String database,
-                                           @PathParam("user") String userName,
-                                           @PathParam("id") Long donorNodeId,
-                                           @QueryParam("sample") String sampleToSet,
-                                           @QueryParam("status") String statusToSet,
-                                           @QueryParam("reason") String reasonToSet,
-                                           @QueryParam("time") String timeToSet,
-                                           @Context GraphDatabaseService db) throws IOException {
+    public Response getDonorQC(@PathParam("database") String database,
+                               @PathParam("user") String userName,
+                               @PathParam("id") Long donorNodeId,
+                               @QueryParam("sample") String sampleToSet,
+                               @QueryParam("status") String statusToSet,
+                               @QueryParam("reason") String reasonToSet,
+                               @QueryParam("time") String timeToSet,
+                               @Context GraphDatabaseService db) throws IOException {
         
         Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
         Label groupLabel = DynamicLabel.label(database + "|VRTrack|Group");
@@ -1336,7 +1336,7 @@ public class Service {
                 // aren't for the closest sample, so first we get the closest
                 // sample
                 String sampleLabel = database + "|VRTrack|Sample";
-                List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, leafNode, results, sampleLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                List<org.neo4j.graphdb.Path> paths = getClosestPaths(db, leafNode, sampleLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
                 Node closestSample = null;
                 org.neo4j.graphdb.Path pathToClosestSample = null;
                 if (paths.size() == 1) {
@@ -1348,17 +1348,17 @@ public class Service {
                 // has qc_file relationships
                 Node fseWithQC = null;
                 String laneOrSectionLabel = database + "|VRTrack|Lane";
-                paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                paths = getClosestPaths(db, leafNode, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
                 if (paths.size() != 1) {
                     laneOrSectionLabel = database + "|VRTrack|Section";
-                    paths = getClosestPaths(db, leafNode, results, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    paths = getClosestPaths(db, leafNode, laneOrSectionLabel, in, 20, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
                 }
                 if (paths.size() == 1) {
                     org.neo4j.graphdb.Path laneOrSectionPath = paths.get(0);
                     Node laneOrSection = laneOrSectionPath.endNode();
                     
                     // sanity check the sample
-                    paths = getClosestPaths(db, laneOrSection, results, sampleLabel, in, 5, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
+                    paths = getClosestPaths(db, laneOrSection, sampleLabel, in, 5, 0, check_literal_props, check_regex_props, properties_literal, properties_regex);
                     Node thisSample = null;
                     if (paths.size() == 1) {
                         org.neo4j.graphdb.Path pathToSample = paths.get(0);
@@ -1766,6 +1766,530 @@ public class Service {
             }
             
             addNodeDetailsToResults(parent, results, "FileSystemElement");
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    /*
+        For the graph_vrtrack datasource we need to quickly get crams under
+        a point in the VRTrack hierarchy along with all hierarchy info, and
+        we implement here for speed instead of calling the
+        get_sequencing_hierarchy service many times externally, which is slow
+    */
+    
+    private void addHierarchyNodeProps (Node node, String label, HashMap<String, String> props) {
+        for (String pKey: node.getPropertyKeys()) {
+            Object val = node.getProperty(pKey);
+            if (val instanceof String) {
+                String valStr = (String) val;
+                props.put(label + "_" + pKey, valStr);
+            }
+        }
+    }
+    
+    private boolean passesVRTrackFilesParentFilter (HashMap<String, HashMap<String, ArrayList<String>>> parentFilters, String label, HashMap<String, String> hierarchyProps) {
+        HashMap<String, ArrayList<String>> labelMap = parentFilters.get(label);
+        if (labelMap != null) {
+            for (Map.Entry<String, ArrayList<String>> entry : labelMap.entrySet()) {
+                String property = entry.getKey();
+                ArrayList<String> vals = entry.getValue();
+                String actualVal = hierarchyProps.get(label + "_" + property);
+                
+                int ok = 0;
+                for (String val: vals) {
+                    if (actualVal == null && (val == null || val.equals("0"))) {
+                        // allow a desired 0 to match an unspecified
+                        // node property
+                        ok++;
+                    }
+                    else if (actualVal != null && actualVal.equals(val)) {
+                        ok++;
+                    }
+                }
+                
+                if (ok == 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    
+    private boolean passesVRTrackFilesQCFilter (HashMap<String, ArrayList<String[]>> qcFilters, Node fileNode, HashMap<String, String> qcProps) {
+        // unlike vrtrack_file_qc, fileNode must be directly attached to lane
+        // and have qc_file realtionships - we're not going to search for a
+        // better fse. Instead we immediately try and find the desired qc nodes
+        // that have the values we need to filter on
+        HashMap<Long, Integer> doneQCNodes = new HashMap<Long, Integer>();
+        for (Map.Entry<String, ArrayList<String[]>> entry : qcFilters.entrySet()) {
+            String type = entry.getKey();
+            Node qcNode = null;
+            
+            switch (type) {
+                case "file":
+                    qcNode = fileNode;
+                    break;
+                case "header_mistakes":
+                    Long latest = Long.valueOf(0);
+                    Node latestHeaderNode = null;
+                    for (Relationship fhRel: fileNode.getRelationships(VrtrackRelationshipTypes.header_mistakes, out)) {
+                        Node header = fhRel.getEndNode();
+                        Long nodeId = header.getId();
+                        
+                        if (nodeId > latest) {
+                            latestHeaderNode = header;
+                            latest = nodeId;
+                        }
+                    }
+                    if (latestHeaderNode != null) {
+                        qcNode = latestHeaderNode;
+                    }
+                    else {
+                        return false;
+                    }
+                    break;
+                case "auto_qc":
+                    int latestAQC = 0;
+                    Node latestAQCNode = null;
+                    for (Relationship rel: fileNode.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
+                        Node thisNode = rel.getEndNode();
+                        int thisDate = 0;
+                        if (thisNode.hasProperty("date")) {
+                            thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                        }
+                        
+                        if (latestAQCNode == null || thisDate > latestAQC) {
+                            latestAQCNode = thisNode;
+                            latestAQC = thisDate;
+                        }
+                    }
+                    if (latestAQCNode != null) {
+                        qcNode = latestAQCNode;
+                    }
+                    else {
+                        return false;
+                    }
+                    break;
+                default:
+                    // fileNode has a number of qc_file rels that point to an
+                    // fse that points to a possible node of interest
+                    RelationshipType qcRelType = null;
+                    switch (type) {
+                        case "genotype":
+                            qcRelType = VrtrackRelationshipTypes.genotype_data;
+                            break;
+                        case "stats":
+                            qcRelType = VrtrackRelationshipTypes.summary_stats;
+                            break;
+                        case "verifybamid":
+                            qcRelType = VrtrackRelationshipTypes.verify_bam_id_data;
+                            break;
+                        default:
+                            return false;
+                    }
+                    
+                    for (Relationship fqRel: fileNode.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
+                        Node qcFile = fqRel.getEndNode();
+                        if (doneQCNodes.containsKey(qcFile.getId())) {
+                            continue;
+                        }
+                        
+                        int latestDate = 0;
+                        Node latestNode = null;
+                        for (Relationship rel: qcFile.getRelationships(qcRelType, out)) {
+                            Node thisNode = rel.getEndNode();
+                            int thisDate = 0;
+                            if (thisNode.hasProperty("date")) {
+                                thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                            }
+                            
+                            if (latestNode == null || thisDate > latestDate) {
+                                latestNode = thisNode;
+                                latestDate = thisDate;
+                            }
+                        }
+                        
+                        if (latestNode != null) {
+                            qcNode = latestNode;
+                            doneQCNodes.put(qcFile.getId(), Integer.valueOf(1));
+                        }
+                    }
+                    
+                    if (qcNode == null) {
+                        return false;
+                    }
+            }
+            
+            ArrayList<String[]> filterList = entry.getValue();
+            for (String[] filterVals : filterList) {
+                String property = filterVals[0];
+                String operator = filterVals[1];
+                String value = filterVals[2];
+                
+                String actualVal = qcNode.getProperty(property, null).toString();
+                
+                if (actualVal == null) {
+                    if (value.equals("0") && operator.equals("==")) {
+                        // allow 0 to match undef
+                        qcProps.put(type + "_" + property, "0");
+                        continue;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                
+                switch (operator) {
+                    case "==":
+                        if (! actualVal.equals(value)) {
+                            return false;
+                        }
+                        break;
+                    case "!=":
+                        if (actualVal.equals(value)) {
+                            return false;
+                        }
+                        break;
+                    default:
+                        int actualInt = Integer.parseInt(actualVal);
+                        int desiredInt = Integer.parseInt(value);
+                        
+                        switch (operator) {
+                            case "<":
+                                if (! (actualInt < desiredInt)) {
+                                    return false;
+                                }
+                                break;
+                            case "<=":
+                                if (! (actualInt <= desiredInt)) {
+                                    return false;
+                                }
+                                break;
+                            case ">":
+                                if (! (actualInt > desiredInt)) {
+                                    return false;
+                                }
+                                break;
+                            case ">=":
+                                if (! (actualInt >= desiredInt)) {
+                                    return false;
+                                }
+                                break;
+                            default:
+                                return false;
+                        }
+                }
+                
+                if (! type.equals("file")) {
+                    qcProps.put(type + "_" + property, actualVal);
+                }
+            }
+        }
+        
+        return true;
+    }
+    
+    @GET
+    @Path("/vrtrack_alignment_files/{database}/{source}/{fileext}") 
+    public Response getVRTrackFiles(@PathParam("database") String database,
+                                    @PathParam("source") String source,
+                                    @PathParam("fileext") String fileExt,
+                                    @QueryParam("parent_filter") String pf,
+                                    @QueryParam("qc_filter") String qf,
+                                    @Context GraphDatabaseService db) throws IOException {
+        
+        Label fseLabel = DynamicLabel.label(database + "|VRPipe|FileSystemElement");
+        String laneLabelStr = database + "|VRTrack|Lane";
+        Label laneLabel = DynamicLabel.label(laneLabelStr);
+        Label libLabel = DynamicLabel.label(database + "|VRTrack|Library");
+        Label taxonLabel = DynamicLabel.label(database + "|VRTrack|Taxon");
+        Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
+        
+        // Source is a description of a parent node(s) of your desired Lanes, in
+        // the form 'Label#property#value1,value2'. Eg. 'Study#id#123,456,789'
+        // to work with all lanes under studies with those 3 ids.
+        String[] sourceSplit = source.split("#");
+        Label sourceLabel = DynamicLabel.label(database + "|VRTrack|" + sourceSplit[0]);
+        String sourceProperty = sourceSplit[1];
+        String[] sourceVals = sourceSplit[2].split(",");
+        List<List<String>> properties_literal = new ArrayList<List<String>>();
+        List<Map.Entry<String,Pattern>> properties_regex = new ArrayList<>();
+        
+        // The parent_filter option is a string of the form
+        // 'Label#propery#value'; multiple filters can be separated by commas
+        // (and having the same Label and property multiple times with different
+        // values means the actual value must match one of those values). The
+        // filter will look for an exact match to a property of a node that the
+        // file's node is descended from, eg. specify Sample#qc_failed#0 to only
+        // have files related to samples that have not been qc failed.
+        HashMap<String, HashMap<String, ArrayList<String>>> parentFilters = new HashMap<String, HashMap<String, ArrayList<String>>>();
+        if (pf != null) {
+            // Sample#qc_failed#0,Sample#created_date#1426150152
+            for (String filter: pf.split(",")) {
+                String[] parts = filter.split("#");
+                String label = parts[0];
+                
+                HashMap<String, ArrayList<String>> labelMap = parentFilters.get(label);
+                if (labelMap == null) {
+                    labelMap = new HashMap<String, ArrayList<String>>();
+                    parentFilters.put(label, labelMap);
+                }
+                
+                ArrayList<String> propVals = labelMap.get(parts[1]);
+                if (propVals == null) {
+                    propVals = new ArrayList<String>();
+                    labelMap.put(parts[1], propVals);
+                }
+                
+                propVals.add(parts[2]);
+            }
+        }
+        
+        // The qc_filter option lets you filter on properties of the file itself
+        // or on properties of certain qc-related nodes that are children of the
+        // file and may be created by some downstream analysis; these are
+        // specified in the form 'psuedoLabel#property#operator#value', and
+        // multiple of these can be separated by commas. An example might be
+        // 'stats#sequences#>#10000,stats#reads QC failed#<#1000,genotype#pass#=
+        // #1,verifybamid#pass#=#1,file#manual_qc#=#1,file#vrtrack_qc_passed#=#1
+        // ' to only use cram files with more than 10000 total sequences and
+        // fewer than 1000 qc failed reads (according to the Bam_Stats node),
+        // with a genotype status of 'pass' (from the Genotype node), a 'pass'
+        // from the verify bam id process (from the Verify_Bam_ID node) and with
+        // manual_qc and vrtrack_qc_passed metadata set to 1 on the node
+        // representing the cram file itself.
+        boolean doQCFiltering = false;
+        HashMap<String, ArrayList<String[]>> qcFilters = new HashMap<String, ArrayList<String[]>>();
+        if (qf != null) {
+            for (String filter: qf.split(",")) {
+                String[] parts = filter.split("#");
+                String type = parts[0].toLowerCase();
+                String property = parts[1];
+                String operator = parts[2];
+                String value = parts[3];
+                
+                if (operator.equals("=")) {
+                    operator = "==";
+                }
+                
+                ArrayList<String[]> filterList = qcFilters.get(type);
+                if (filterList == null) {
+                    filterList = new ArrayList<String[]>();
+                    qcFilters.put(type, filterList);
+                }
+                
+                String[] filterVals = { property, operator, value };
+                filterList.add(filterVals);
+                doQCFiltering = true;
+            }
+        }
+        
+        HashMap<String, HashMap<String, HashMap<String, String>>> results = new HashMap<String, HashMap<String, HashMap<String, String>>>();
+        try (Transaction tx = db.beginTx()) {
+            ArrayList<Node> lanes = new ArrayList<Node>();
+            for (String sourceVal: sourceVals) {
+                Node vrtrackNode = db.findNode(sourceLabel, sourceProperty, sourceVal);
+                if (vrtrackNode != null) {
+                    switch (sourceSplit[0]) {
+                        case "Lane":
+                            lanes.add(vrtrackNode);
+                            break;
+                        case "Study":
+                            for (Relationship srel : vrtrackNode.getRelationships(VrtrackRelationshipTypes.created_for, in)) {
+                                Node lane = srel.getStartNode();
+                                if (lane.hasLabel(laneLabel)) {
+                                    lanes.add(lane);
+                                }
+                            }
+                            break;
+                        case "Sample":
+                            for (Relationship srel : vrtrackNode.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
+                                Node lib = srel.getEndNode();
+                                if (lib.hasLabel(libLabel)) {
+                                    for (Relationship lrel : lib.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                        Node lane = lrel.getEndNode();
+                                        if (lane.hasLabel(laneLabel)) {
+                                            lanes.add(lane);
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        case "Library":
+                            for (Relationship lrel : vrtrackNode.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                Node lane = lrel.getEndNode();
+                                if (lane.hasLabel(laneLabel)) {
+                                    lanes.add(lane);
+                                }
+                            }
+                            break;
+                        default:
+                            List<Node> closeNodes = getClosestNodes(db, vrtrackNode, laneLabelStr, out, 20, 1, false, false, properties_literal, properties_regex);
+                            for (Node node : closeNodes) {
+                                lanes.add(node);
+                            }
+                    }
+                }
+            }
+            
+            if (! (lanes.size() > 0)) {
+                return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+            }
+            
+            int passed = 0;
+            int failedPF = 0;
+            int failedQF = 0;
+            int failedNoCramFile = 0;
+            LANE: for (Node lane: lanes) {
+                Node alignFile = null;
+                for (Relationship lrel : lane.getRelationships(VrtrackRelationshipTypes.aligned, out)) {
+                    Node fse = lrel.getEndNode();
+                    if (fse.hasLabel(fseLabel) && fse.getProperty("basename").toString().endsWith(fileExt)) {
+                        alignFile = fse;
+                        break;
+                    }
+                }
+                
+                if (alignFile == null) {
+                    failedNoCramFile++;
+                    continue;
+                }
+                
+                
+                // get props of file and store them in result under path of
+                // this file
+                HashMap<String, HashMap<String, String>> fileResult = new HashMap<String, HashMap<String, String>>();
+                
+                // first check it passes any qc filters, and store the qc
+                // properties we filtered on
+                if (doQCFiltering) {
+                    HashMap<String, String> qcProps = new HashMap<String, String>();
+                    if (! passesVRTrackFilesQCFilter(qcFilters, alignFile, qcProps)) {
+                        failedQF++;
+                        continue;
+                    }
+                    
+                    // if the only filter was on file, we won't have any
+                    // qcProps, since we get all file props anyway below
+                    if (! qcProps.isEmpty()) {
+                        fileResult.put("qc_meta", qcProps);
+                    }
+                }
+                
+                HashMap<String, String> fileProps = new HashMap<String, String>();
+                addHierarchyNodeProps(alignFile, "FileSystemElement", fileProps);
+                String alignPath = fileProps.remove("FileSystemElement_path");
+                fileProps.put("FileSystemElement_node_id", String.valueOf(alignFile.getId()));
+                fileResult.put("file_properties", fileProps);
+                
+                // walk up the hierarchy and store hierarchy info
+                HashMap<String, String> hierarchyProps = new HashMap<String, String>();
+                addHierarchyNodeProps(lane, "Lane", hierarchyProps);
+                
+                // if there's a parent filter on lanes, filter on that now
+                if (! passesVRTrackFilesParentFilter(parentFilters, "Lane", hierarchyProps)) {
+                    failedPF++;
+                    continue;
+                }
+                
+                Relationship rel = lane.getSingleRelationship(VrtrackRelationshipTypes.sequenced, in);
+                if (rel != null) {
+                    Node lib = rel.getStartNode();
+                    addHierarchyNodeProps(lib, "Library", hierarchyProps);
+                    if (! passesVRTrackFilesParentFilter(parentFilters, "Library", hierarchyProps)) {
+                        failedPF++;
+                        continue;
+                    }
+                    
+                    rel = lib.getSingleRelationship(VrtrackRelationshipTypes.prepared, in);
+                    if (rel != null) {
+                        Node sample = rel.getStartNode();
+                        addHierarchyNodeProps(sample, "Sample", hierarchyProps);
+                        if (! passesVRTrackFilesParentFilter(parentFilters, "Sample", hierarchyProps)) {
+                            failedPF++;
+                            continue;
+                        }
+                        
+                        for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
+                            Node gender = grel.getEndNode();
+                            addHierarchyNodeProps(gender, "Gender", hierarchyProps);
+                            if (! passesVRTrackFilesParentFilter(parentFilters, "Gender", hierarchyProps)) {
+                                failedPF++;
+                                continue LANE;
+                            }
+                            break;
+                        }
+                        
+                        rel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+                        if (rel != null) {
+                            Node donor = rel.getStartNode();
+                            addHierarchyNodeProps(donor, "Donor", hierarchyProps);
+                            if (! passesVRTrackFilesParentFilter(parentFilters, "Donor", hierarchyProps)) {
+                                failedPF++;
+                                continue;
+                            }
+                        }
+                        
+                        Node directlyAttachedStudy = null;
+                        rel = lane.getSingleRelationship(VrtrackRelationshipTypes.created_for, out);
+                        if (rel != null) {
+                            directlyAttachedStudy = rel.getEndNode();
+                            addHierarchyNodeProps(directlyAttachedStudy, "Study", hierarchyProps);
+                        }
+                        
+                        Node preferredStudy = null;
+                        Node anyStudy = null;
+                        for (Relationship mrel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
+                            Node parent = mrel.getStartNode();
+                            
+                            if (parent.hasLabel(taxonLabel)) {
+                                addHierarchyNodeProps(parent, "Taxon", hierarchyProps);
+                                if (! passesVRTrackFilesParentFilter(parentFilters, "Taxon", hierarchyProps)) {
+                                    failedPF++;
+                                    continue LANE;
+                                }
+                            }
+                            else if (directlyAttachedStudy == null && parent.hasLabel(studyLabel)) {
+                                if (preferredStudy == null && mrel.hasProperty("preferred")) {
+                                    String pref = mrel.getProperty("preferred").toString();
+                                    if (pref.equals("1")) {
+                                        preferredStudy = parent;
+                                        addHierarchyNodeProps(preferredStudy, "Study", hierarchyProps);
+                                    }
+                                }
+                                else if (anyStudy == null) {
+                                    anyStudy = parent;
+                                }
+                            }
+                        }
+                        
+                        if (preferredStudy == null && anyStudy != null) {
+                            addHierarchyNodeProps(anyStudy, "Study", hierarchyProps);
+                        }
+                        
+                        if (! passesVRTrackFilesParentFilter(parentFilters, "Study", hierarchyProps)) {
+                            failedPF++;
+                            continue;
+                        }
+                    }
+                }
+                fileResult.put("hierarchy", hierarchyProps);
+                
+                results.put(alignPath, fileResult);
+                passed++;
+            }
+            
+            // we have a fake "file" in the results that lets us return stats
+            // about how search went
+            HashMap<String, HashMap<String, String>> statsResult = new HashMap<String, HashMap<String, String>>();
+            HashMap<String, String> statProps = new HashMap<String, String>();
+            statProps.put("passed", String.valueOf(passed));
+            statProps.put("failed parent filter", String.valueOf(failedPF));
+            statProps.put("failed qc filter", String.valueOf(failedQF));
+            statProps.put("failed no cram file", String.valueOf(failedNoCramFile));
+            statsResult.put("stats", statProps);
+            results.put("search", statsResult);
         }
         
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
