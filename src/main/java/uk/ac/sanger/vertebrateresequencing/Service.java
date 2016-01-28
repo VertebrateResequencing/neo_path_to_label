@@ -1932,9 +1932,9 @@ public class Service {
                 String operator = filterVals[1];
                 String value = filterVals[2];
                 
-                String actualVal = qcNode.getProperty(property, null).toString();
+                Object gpObj = qcNode.getProperty(property, null);
                 
-                if (actualVal == null) {
+                if (gpObj == null) {
                     if (value.equals("0") && operator.equals("==")) {
                         // allow 0 to match undef
                         qcProps.put(type + "_" + property, "0");
@@ -1944,6 +1944,8 @@ public class Service {
                         return false;
                     }
                 }
+                
+                String actualVal = gpObj.toString();
                 
                 switch (operator) {
                     case "==":
