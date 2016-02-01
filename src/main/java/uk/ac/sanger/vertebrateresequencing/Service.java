@@ -49,7 +49,7 @@ public class Service {
     
     enum VrtrackRelationshipTypes implements RelationshipType {
         sequenced, prepared, gender, member, sample, placed, section, has, created_for, aligned,
-        administers, failed_by, selected_by, passed_by, processed, imported,
+        administers, failed_by, selected_by, passed_by, passed_genotyping_by, frozen_by, deferred_by, processed, imported,
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
         pluritest, pluritest_plot,
@@ -403,7 +403,7 @@ public class Service {
                     setSampleQC = true;
                 }
             }
-            else if (statusToSet.equals("passed") || statusToSet.equals("selected") || statusToSet.equals("pending")) {
+            else if (statusToSet.equals("set_passed") || statusToSet.equals("set_passed_genotyping") || statusToSet.equals("unset_passed") || statusToSet.equals("unset_passed_genotyping") || statusToSet.equals("selected") || statusToSet.equals("defer") || statusToSet.equals("freeze")) {
                 setSampleQC = true;
                 reasonToSet = null;
             }
@@ -487,47 +487,84 @@ public class Service {
                 // first set new qc status if supplied
                 if (isAdmin && setSampleQC && sample.getProperty("name").equals(sampleToSet)) {
                     RelationshipType suRelType = null;
-                    if (statusToSet.equals("failed")) {
-                        sample.setProperty("qc_failed", "1");
-                        sample.setProperty("qc_selected", "0");
-                        sample.setProperty("qc_passed", "0");
-                        suRelType = VrtrackRelationshipTypes.failed_by;
-                    }
-                    else if (statusToSet.equals("selected")) {
-                        sample.setProperty("qc_failed", "0");
-                        sample.setProperty("qc_selected", "1");
-                        sample.setProperty("qc_passed", "0");
-                        suRelType = VrtrackRelationshipTypes.selected_by;
-                    }
-                    else if (statusToSet.equals("passed")) {
-                        sample.setProperty("qc_failed", "0");
-                        sample.setProperty("qc_selected", "0");
-                        sample.setProperty("qc_passed", "1");
-                        suRelType = VrtrackRelationshipTypes.passed_by;
-                    }
-                    else if (statusToSet.equals("pending")) {
-                        sample.setProperty("qc_failed", "0");
-                        sample.setProperty("qc_selected", "0");
-                        sample.setProperty("qc_passed", "0");
-                    }
+                    List<RelationshipType> qcRelsToRemove = new ArrayList<RelationshipType>();
+                    switch (statusToSet) {
+                        case "failed":
+                            sample.setProperty("qc_failed", "1");
+                            sample.setProperty("qc_selected", "0");
+                            sample.setProperty("qc_freeze", "0");
+                            sample.setProperty("qc_defer", "0");
+                            suRelType = VrtrackRelationshipTypes.failed_by;
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.failed_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.selected_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.frozen_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.deferred_by);
+                            break;
+                        case "selected":
+                            sample.setProperty("qc_failed", "0");
+                            sample.setProperty("qc_selected", "1");
+                            sample.setProperty("qc_freeze", "0");
+                            sample.setProperty("qc_defer", "0");
+                            suRelType = VrtrackRelationshipTypes.selected_by;
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.failed_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.selected_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.frozen_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.deferred_by);
+                            break;
+                        case "freeze":
+                            sample.setProperty("qc_failed", "0");
+                            sample.setProperty("qc_selected", "0");
+                            sample.setProperty("qc_freeze", "1");
+                            sample.setProperty("qc_defer", "0");
+                            suRelType = VrtrackRelationshipTypes.frozen_by;
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.failed_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.selected_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.frozen_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.deferred_by);
+                            break;
+                        case "defer":
+                            sample.setProperty("qc_failed", "0");
+                            sample.setProperty("qc_selected", "0");
+                            sample.setProperty("qc_freeze", "0");
+                            sample.setProperty("qc_defer", "1");
+                            suRelType = VrtrackRelationshipTypes.deferred_by;
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.failed_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.selected_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.frozen_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.deferred_by);
+                            break;
+                        case "set_passed":
+                            sample.setProperty("qc_passed", "1");
+                            suRelType = VrtrackRelationshipTypes.passed_by;
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_by);
+                            break;
+                        case "unset_passed":
+                            sample.setProperty("qc_passed", "0");
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_genotyping_by);
+                            break;
+                        case "set_passed_genotyping":
+                            sample.setProperty("qc_passed_genotyping", "1");
+                            suRelType = VrtrackRelationshipTypes.passed_genotyping_by;
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_genotyping_by);
+                            break;
+                        case "unset_passed_genotyping":
+                            sample.setProperty("qc_passed_genotyping", "0");
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_genotyping_by);
+                            break;
+                    } 
                     
-                    // remove any existing rels
-                    Relationship qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.failed_by, out);
-                    if (qcRel != null) {
-                        qcRel.delete();
-                    }
-                    qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.selected_by, out);
-                    if (qcRel != null) {
-                        qcRel.delete();
-                    }
-                    qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.passed_by, out);
-                    if (qcRel != null) {
-                        qcRel.delete();
+                    // remove the existing rels
+                    for (RelationshipType qcRelType : qcRelsToRemove) {
+                        Relationship qcRel = sample.getSingleRelationship(qcRelType, out);
+                        if (qcRel != null) {
+                            qcRel.delete();
+                        }
                     }
                     
                     // now say who did this qc status change, when and why
                     if (suRelType != null) {
-                        qcRel = sample.createRelationshipTo(adminUser, suRelType);
+                        Relationship qcRel = sample.createRelationshipTo(adminUser, suRelType);
                         qcRel.setProperty("time", timeToSet);
                         if (reasonToSet != null) {
                             qcRel.setProperty("reason", reasonToSet);
@@ -562,14 +599,46 @@ public class Service {
                         qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.selected_by, out);
                     }
                     else {
-                        qcVal = sample.getProperty("qc_passed", null);
+                        qcVal = sample.getProperty("qc_freeze", null);
                         if (qcVal != null && qcVal.equals("1")) {
-                            qcStatus = "passed";
-                            qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.passed_by, out);
+                            qcStatus = "freeze";
+                            qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.frozen_by, out);
+                        }
+                        else {
+                            qcVal = sample.getProperty("qc_defer", null);
+                            if (qcVal != null && qcVal.equals("1")) {
+                                qcStatus = "defer";
+                                qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.deferred_by, out);
+                            }
                         }
                     }
                 }
                 sampleInfo.put("qc_status", qcStatus);
+                
+                // independently of qc_status we'll return if either of the
+                // pass levels have been set
+                qcVal = sample.getProperty("qc_passed_genotyping", null);
+                if (qcVal != null && qcVal.equals("1")) {
+                    sampleInfo.put("qc_passed_fluidigm", true);
+                    sampleInfo.put("qc_passed_genotyping", true);
+                    if (qcRel == null) {
+                        qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.passed_genotyping_by, out);
+                    }
+                }
+                else {
+                    qcVal = sample.getProperty("qc_passed", null);
+                    if (qcVal != null && qcVal.equals("1")) {
+                        sampleInfo.put("qc_passed_fluidigm", true);
+                        sampleInfo.put("qc_passed_genotyping", false);
+                        if (qcRel == null) {
+                            qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.passed_by, out);
+                        }
+                    }
+                    else {
+                        sampleInfo.put("qc_passed_fluidigm", false);
+                        sampleInfo.put("qc_passed_genotyping", false);
+                    }
+                }
                 
                 if (qcRel != null) {
                     Node qcUser = qcRel.getEndNode();
