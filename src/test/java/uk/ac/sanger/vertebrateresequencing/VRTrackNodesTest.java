@@ -120,16 +120,25 @@ public class VRTrackNodesTest {
         LinkedHashMap<String, Object> propd1 = new LinkedHashMap<String, Object>();
         propd1.put("id", "d1");
         propd1.put("example_sample", "s1");
+        propd1.put("qc_unresolved_fluidigm", "0");
+        propd1.put("qc_unresolved_genotyping", "0");
+        propd1.put("qc_unresolved", "2");
         propd1.put("neo4j_label", "Donor");
         expected.put("9", propd1);
         LinkedHashMap<String, Object> propd2 = new LinkedHashMap<String, Object>();
         propd2.put("id", "d2");
         propd2.put("example_sample", "s4");
+        propd2.put("qc_unresolved_fluidigm", "0");
+        propd2.put("qc_unresolved_genotyping", "0");
+        propd2.put("qc_unresolved", "2");
         propd2.put("neo4j_label", "Donor");
         expected.put("10", propd2);
         LinkedHashMap<String, Object> propd3 = new LinkedHashMap<String, Object>();
         propd3.put("id", "d3");
         propd3.put("example_sample", "s5");
+        propd3.put("qc_unresolved_fluidigm", "0");
+        propd3.put("qc_unresolved_genotyping", "0");
+        propd3.put("qc_unresolved", "2");
         propd3.put("neo4j_label", "Donor");
         expected.put("11", propd3);
         

@@ -920,10 +920,15 @@ public class Service {
             
             // add the most recent sample created date, and the name of
             // a control sample, or just the shortest sample name if not
-            // control exists
+            // control exists. Also count up the number of samples that have
+            // unresolved qc at fluidigm and genotyping stages
             int mostRecentDate = 0;
             List<String> controls = new ArrayList<String>();
             String shortest = null;
+            int numSamples = 0;
+            int numUnresolvedFluidigm = 0; // there is fluidigm data but no qc_passed set
+            int numUnresolvedGenotyping = 0; // there is genotyping/microarray data but no final qc status set (qc_passed_genotyping is redundant)
+            int numUnresolved = 0; // there are samples but no final qc status set (in case a sample is not expected to ever get genotyping results, or even fluidigm?!)
             for (Relationship dsrel: node.getRelationships(VrtrackRelationshipTypes.sample, out)) {
                 Node sample = dsrel.getEndNode();
                 
@@ -952,6 +957,60 @@ public class Service {
                         }
                     }
                 }
+                
+                numSamples++;
+                
+                boolean unresolved = false;
+                Object qcVal = sample.getProperty("qc_failed", null);
+                if (qcVal != null && qcVal.equals("1")) {
+                    unresolved = false;
+                }
+                else {
+                    qcVal = sample.getProperty("qc_selected", null);
+                    if (qcVal != null && qcVal.equals("1")) {
+                        unresolved = false;
+                    }
+                    else {
+                        qcVal = sample.getProperty("qc_freeze", null);
+                        if (qcVal != null && qcVal.equals("1")) {
+                            unresolved = false;
+                        }
+                        else {
+                            unresolved = true;
+                        }
+                    }
+                }
+                
+                boolean hasFluidigm = false;
+                boolean hasGenotyping = false;
+                for (Relationship sdrel: sample.getRelationships(VrtrackRelationshipTypes.discordance, out)) {
+                    Node disc = sdrel.getEndNode();
+                    String type = disc.getProperty("type").toString();
+                    if (type.equals("fluidigm")) {
+                        hasFluidigm = true;
+                    }
+                    else if (type.equals("genotype")) {
+                        hasGenotyping = true;
+                        if (hasFluidigm) {
+                            break;
+                        }
+                    }
+                }
+                
+                if (hasFluidigm) {
+                    qcVal = sample.getProperty("qc_passed", null);
+                    if (qcVal == null || qcVal.equals("0")) {
+                        numUnresolvedFluidigm++;
+                    }
+                }
+                
+                if (unresolved) {
+                    numUnresolved++;
+                    
+                    if (hasGenotyping) {
+                        numUnresolvedGenotyping++;
+                    }
+                }
             }
             
             if (controls.size() == 1) {
@@ -964,6 +1023,10 @@ public class Service {
             if (mostRecentDate > 0) {
                 props.put("last_sample_added_date", String.valueOf(mostRecentDate));
             }
+            
+            props.put("qc_unresolved_fluidigm", String.valueOf(numUnresolvedFluidigm));
+            props.put("qc_unresolved_genotyping", String.valueOf(numUnresolvedGenotyping));
+            props.put("qc_unresolved", String.valueOf(numUnresolved));
         }
         else if (node.hasLabel(sampleLabel)) {
             props.put("neo4j_label", "Sample");

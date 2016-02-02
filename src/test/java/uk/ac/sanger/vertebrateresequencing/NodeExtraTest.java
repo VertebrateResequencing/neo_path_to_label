@@ -28,6 +28,9 @@ public class NodeExtraTest {
         prop.put("neo4j_label", "Donor");
         prop.put("example_sample", "sp1");
         prop.put("last_sample_added_date", "125");
+        prop.put("qc_unresolved_fluidigm", "0");
+        prop.put("qc_unresolved_genotyping", "0");
+        prop.put("qc_unresolved", "1");
         expected.put("5", prop);
         
         assertEquals(expected, actual);
@@ -49,6 +52,8 @@ public class NodeExtraTest {
         prop.put("donor_id", "d1");
         prop.put("study_node_id", "1");
         prop.put("study_id", "2");
+        prop.put("qc_defer", "1");
+        prop.put("qc_passed", "1");
         expected.put("4", prop);
         
         assertEquals(expected, actual);
@@ -58,9 +63,9 @@ public class NodeExtraTest {
             new StringBuilder()
                     .append("CREATE (stu1:`vdp|VRTrack|Study` {id:'1'})")
                     .append("CREATE (stu2:`vdp|VRTrack|Study` {id:'2'})")
-                    .append("CREATE (s1:`vdp|VRTrack|Sample` {name:'s1',control:'1',public_name:'sp1',created_date:'123'})")
-                    .append("CREATE (s2:`vdp|VRTrack|Sample` {name:'s2',control:'0',public_name:'sp2',created_date:'125'})")
-                    .append("CREATE (s3:`vdp|VRTrack|Sample` {name:'s3',control:'0',public_name:'sp3',created_date:'124'})")
+                    .append("CREATE (s1:`vdp|VRTrack|Sample` {name:'s1',control:'1',public_name:'sp1',created_date:'123',qc_selected:'1',qc_passed:'1',qc_passed_genotyping:'1'})")
+                    .append("CREATE (s2:`vdp|VRTrack|Sample` {name:'s2',control:'0',public_name:'sp2',created_date:'125',qc_freeze:'1',qc_passed:'1',qc_passed_genotyping:'1'})")
+                    .append("CREATE (s3:`vdp|VRTrack|Sample` {name:'s3',control:'0',public_name:'sp3',created_date:'124',qc_defer:'1',qc_passed:'1'})")
                     .append("CREATE (d1:`vdp|VRTrack|Donor` {id:'d1'})")
                     .append("CREATE (d1)-[:sample]->(s1)")
                     .append("CREATE (d1)-[:sample]->(s2)")
