@@ -927,7 +927,7 @@ public class Service {
             String shortest = null;
             int numSamples = 0;
             int numUnresolvedFluidigm = 0; // there is fluidigm data but no qc_passed set
-            int numUnresolvedGenotyping = 0; // there is genotyping/microarray data but no final qc status set (qc_passed_genotyping is redundant)
+            int numUnresolvedGenotyping = 0; // there is genotyping & microarray data but no final qc status set (qc_passed_genotyping is redundant)
             int numUnresolved = 0; // there are samples but no final qc status set (in case a sample is not expected to ever get genotyping results, or even fluidigm?!)
             for (Relationship dsrel: node.getRelationships(VrtrackRelationshipTypes.sample, out)) {
                 Node sample = dsrel.getEndNode();
@@ -961,9 +961,11 @@ public class Service {
                 numSamples++;
                 
                 boolean unresolved = false;
+                boolean failed = false;
                 Object qcVal = sample.getProperty("qc_failed", null);
                 if (qcVal != null && qcVal.equals("1")) {
                     unresolved = false;
+                    failed = true;
                 }
                 else {
                     qcVal = sample.getProperty("qc_selected", null);
@@ -997,7 +999,12 @@ public class Service {
                     }
                 }
                 
-                if (hasFluidigm) {
+                boolean hasMicroarray = false;
+                if (hasGenotyping && sample.hasRelationship(VrtrackRelationshipTypes.pluritest, out)) {
+                    hasMicroarray = true;
+                }
+                
+                if (hasFluidigm && ! failed) {
                     qcVal = sample.getProperty("qc_passed", null);
                     if (qcVal == null || qcVal.equals("0")) {
                         numUnresolvedFluidigm++;
@@ -1007,7 +1014,7 @@ public class Service {
                 if (unresolved) {
                     numUnresolved++;
                     
-                    if (hasGenotyping) {
+                    if (hasMicroarray) {
                         numUnresolvedGenotyping++;
                     }
                 }
