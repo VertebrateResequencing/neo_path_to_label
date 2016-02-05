@@ -29,6 +29,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Collections;
 import java.util.UUID;
+//import java.math.RoundingMode;
+import java.text.DecimalFormat;
 
 @Path("/service")
 public class Service {
@@ -52,7 +54,7 @@ public class Service {
         administers, failed_by, selected_by, passed_by, passed_genotyping_by, frozen_by, deferred_by, processed, imported,
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
-        pluritest, pluritest_plot,
+        pluritest, pluritest_plot, bamstats_plot,
         contains, qc_file, genotype_data, summary_stats, verify_bam_id_data, header_mistakes, auto_qc_status,
         moved_from, symlink, copy
     }
@@ -68,6 +70,9 @@ public class Service {
     
     Direction in = Direction.INCOMING;
     Direction out = Direction.OUTGOING;
+    
+    DecimalFormat df = new DecimalFormat("#.##");
+    //df.setRoundingMode(RoundingMode.CEILING); // can't get this to compile, don't know why
     
     private static Map<String, Node> fseRoots = new HashMap<String, Node>();
     
@@ -914,7 +919,7 @@ public class Service {
         RETURN sample,sd_rel,s_donor,ssr,s_study
     */
     
-    private void addExtraVRTrackInfo (Node node, HashMap<String, Object> props, Label donorLabel, Label sampleLabel, Label studyLabel) {
+    private void addExtraVRTrackInfo (Node node, HashMap<String, Object> props, Label donorLabel, Label sampleLabel, Label laneLabel, Label studyLabel) {
         if (node.hasLabel(donorLabel)) {
             props.put("neo4j_label", "Donor");
             
@@ -1079,6 +1084,234 @@ public class Service {
                 props.put("study_id", studyId);
             }
         }
+        else if (node.hasLabel(laneLabel)) {
+            props.put("neo4j_label", "Lane");
+            
+            // get our library id, sample name and sample public name
+            Relationship llRel = node.getSingleRelationship(VrtrackRelationshipTypes.sequenced, in);
+            if (llRel != null) {
+                Node library = llRel.getStartNode();
+                props.put("library_id", library.getProperty("id").toString());
+                
+                Relationship lsRel = library.getSingleRelationship(VrtrackRelationshipTypes.prepared, in);
+                if (lsRel != null) {
+                    Node sample = lsRel.getStartNode();
+                    props.put("sample_name", sample.getProperty("name").toString());
+                    
+                    Object gpObj = sample.getProperty("public_name", null);
+                    if (gpObj != null) {
+                        props.put("sample_public_name", gpObj.toString());
+                    }
+                }
+            }
+            
+            // get some of the essential (what QCGrind needs to display)
+            // sequencing stats
+            Relationship lfRel = node.getSingleRelationship(VrtrackRelationshipTypes.aligned, out);
+            if (llRel != null) {
+                Node fse = lfRel.getEndNode();
+                Object gpObj = fse.getProperty("manual_qc", null);
+                if (gpObj != null) {
+                    props.put("npg_manual_qc", gpObj.toString());
+                }
+                
+                // get certain properties of the most recent BamStats, Genotype
+                // and Verify_Bam_ID nodes
+                boolean gotStats = false;
+                boolean gotGeno = false;
+                boolean gotVerify = false;
+                for (Relationship fqRel: fse.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
+                    Node qcFile = fqRel.getEndNode();
+                    
+                    // bamstats
+                    if (! gotStats) {
+                        Node bamStats = null;
+                        int latestDate = 0;
+                        for (Relationship qsRel: qcFile.getRelationships(VrtrackRelationshipTypes.summary_stats, out)) {
+                            Node thisNode = qsRel.getEndNode();
+                            int thisDate = 0;
+                            if (thisNode.hasProperty("date")) {
+                                thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                            }
+                            if (bamStats == null || thisDate > latestDate) {
+                                bamStats = thisNode;
+                                latestDate = thisDate;
+                            }
+                        }
+                        
+                        if (bamStats != null) {
+                            Map<String, Object> statProps = bamStats.getAllProperties();
+                            for (Map.Entry<String, Object> entry : statProps.entrySet()) {
+                                String key = entry.getKey();
+                                if (key.equals("date") || key.equals("uuid")) {
+                                    continue;
+                                }
+                                props.put("alignmentstats:" + key, entry.getValue().toString());
+                            }
+                            
+                            // get the paths of the plots
+                            for (Relationship fpRel: qcFile.getRelationships(VrtrackRelationshipTypes.bamstats_plot, out)) {
+                                Node plotFile = fpRel.getEndNode();
+                                gpObj = plotFile.getProperty("caption", null);
+                                if (gpObj != null) {
+                                    props.put("alignmentstats_plot:" + gpObj.toString(), plotFile.getProperty("path").toString());
+                                }
+                            }
+                            
+                            gotStats = true;
+                            if (gotGeno && gotVerify) {
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    // genotype; unfortunately our own gtchecking step doesn't
+                    // store results in the graph, so we can only rely on this
+                    if (! gotGeno) {
+                        Node genotype = null;
+                        int latestDate = 0;
+                        for (Relationship qgRel: qcFile.getRelationships(VrtrackRelationshipTypes.genotype_data, out)) {
+                            Node thisNode = qgRel.getEndNode();
+                            int thisDate = 0;
+                            if (thisNode.hasProperty("date")) {
+                                thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                            }
+                            if (genotype == null || thisDate > latestDate) {
+                                genotype = thisNode;
+                                latestDate = thisDate;
+                            }
+                        }
+                        
+                        if (genotype != null) {
+                            String matched = genotype.getProperty("matched_sample_name").toString();
+                            String expected = genotype.getProperty("expected_sample_name").toString();
+                            String pass = genotype.getProperty("pass").toString();
+                            gpObj = genotype.getProperty("match_count", null);
+                            float matchCount = 0;
+                            if (gpObj != null) {
+                                matchCount = Float.parseFloat(gpObj.toString());
+                            }
+                            gpObj = genotype.getProperty("common_snp_count", null);
+                            float commonSNPCount = 0;
+                            if (gpObj != null) {
+                                commonSNPCount = Float.parseFloat(gpObj.toString());
+                            }
+                            
+                            String concordance = "0";
+                            if ((matchCount > 0) && (commonSNPCount > 0)) {
+                                concordance = df.format(matchCount / commonSNPCount);
+                            }
+                            
+                            String status = "unknown";
+                            if (matched.equals(expected)) {
+                                if (pass.equals("1")) {
+                                    status = "confirmed";
+                                }
+                                else {
+                                    status = "unconfirmed";
+                                }
+                            }
+                            
+                            props.put("gtcheck", status + " (" + matched + ":" + concordance + ")");
+                            
+                            Map<String, Object> statProps = genotype.getAllProperties();
+                            for (Map.Entry<String, Object> entry : statProps.entrySet()) {
+                                String key = entry.getKey();
+                                if (key.equals("date") || key.equals("uuid")) {
+                                    continue;
+                                }
+                                props.put("gtcheckdata:" + key, entry.getValue().toString());
+                            }
+                            
+                            gotGeno = true;
+                            if (gotStats && gotVerify) {
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    // verify_bam_id
+                    if (! gotVerify) {
+                        Node verify = null;
+                        int latestDate = 0;
+                        for (Relationship qvRel: qcFile.getRelationships(VrtrackRelationshipTypes.verify_bam_id_data, out)) {
+                            Node thisNode = qvRel.getEndNode();
+                            int thisDate = 0;
+                            if (thisNode.hasProperty("date")) {
+                                thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                            }
+                            if (verify == null || thisDate > latestDate) {
+                                verify = thisNode;
+                                latestDate = thisDate;
+                            }
+                        }
+                        
+                        if (verify != null) {
+                            Map<String, Object> statProps = verify.getAllProperties();
+                            for (Map.Entry<String, Object> entry : statProps.entrySet()) {
+                                String key = entry.getKey();
+                                if (key.equals("date") || key.equals("uuid")) {
+                                    continue;
+                                }
+                                props.put("verifybamiddata:" + key, entry.getValue().toString());
+                            }
+                            
+                            gotVerify = true;
+                            if (gotStats && gotGeno) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // get the most recent auto qc status, which might be attached
+                // to this fse or an fse attached to this one via imported
+                Node autoQC = null;
+                int latestDate = 0;
+                for (Relationship faRel: fse.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
+                    Node thisNode = faRel.getEndNode();
+                    
+                    int thisDate = 0;
+                    if (thisNode.hasProperty("date")) {
+                        thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                    }
+                    if (autoQC == null || thisDate > latestDate) {
+                        autoQC = thisNode;
+                        latestDate = thisDate;
+                    }
+                }
+                if (autoQC == null) {
+                    for (Relationship fiRel: fse.getRelationships(VrtrackRelationshipTypes.imported, out)) {
+                        Node importFSE = fiRel.getEndNode();
+                        
+                        for (Relationship iaRel: importFSE.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
+                            Node thisNode = iaRel.getEndNode();
+                            
+                            int thisDate = 0;
+                            if (thisNode.hasProperty("date")) {
+                                thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
+                            }
+                            if (autoQC == null || thisDate > latestDate) {
+                                autoQC = thisNode;
+                                latestDate = thisDate;
+                            }
+                        }
+                    }
+                }
+                if (autoQC != null) {
+                    Map<String, Object> autoProps = autoQC.getAllProperties();
+                    for (Map.Entry<String, Object> entry : autoProps.entrySet()) {
+                        String key = entry.getKey();
+                        if (key.equals("date") || key.equals("uuid")) {
+                            continue;
+                        }
+                        props.put("auto_qc:" + key, entry.getValue().toString());
+                    }
+                }
+            }
+        }
     }
     
     @GET
@@ -1089,6 +1322,7 @@ public class Service {
         
         Label donorLabel = DynamicLabel.label(database + "|VRTrack|Donor");
         Label sampleLabel = DynamicLabel.label(database + "|VRTrack|Sample");
+        Label laneLabel = DynamicLabel.label(database + "|VRTrack|Lane");
         Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
         
         HashMap<Long, HashMap<String, Object>> results = new HashMap<Long, HashMap<String, Object>>();
@@ -1102,7 +1336,7 @@ public class Service {
             }
             
             addNodeDetailsToResults(node, results);
-            addExtraVRTrackInfo(node, results.get(node.getId()), donorLabel, sampleLabel, studyLabel);
+            addExtraVRTrackInfo(node, results.get(node.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
         }
 
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
@@ -1133,6 +1367,7 @@ public class Service {
         Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
         Label donorLabel = DynamicLabel.label(database + "|VRTrack|Donor");
         Label sampleLabel = DynamicLabel.label(database + "|VRTrack|Sample");
+        Label laneLabel = DynamicLabel.label(database + "|VRTrack|Lane");
         
         boolean addExtra = false;
         if (label.equals("Donor") || label.equals("Sample")) {
@@ -1196,11 +1431,21 @@ public class Service {
                                                                 if (thisDonor.getId() == donor.getId()) {
                                                                     if (label.equals("Sample")) {
                                                                         addNodeDetailsToResults(sample, results, label);
-                                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, studyLabel);
+                                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
                                                                     }
                                                                     else if (label.equals("Donor")) {
                                                                         addNodeDetailsToResults(thisDonor, results, label);
-                                                                        addExtraVRTrackInfo(thisDonor, results.get(thisDonor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                                        addExtraVRTrackInfo(thisDonor, results.get(thisDonor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                                    }
+                                                                    else if (label.equals("Lane")) {
+                                                                        for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
+                                                                            Node library = salRel.getEndNode();
+                                                                            for (Relationship llRel: sample.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                                                Node lane = llRel.getEndNode();
+                                                                                addNodeDetailsToResults(lane, results, label);
+                                                                                addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -1209,16 +1454,28 @@ public class Service {
                                                     else if (addExtra) {
                                                         if (label.equals("Donor")) {
                                                             addNodeDetailsToResults(donor, results, label);
-                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
                                                         }
                                                         else if (label.equals("Sample")) {
                                                             for (Relationship dsRel: donor.getRelationships(VrtrackRelationshipTypes.sample, out)) {
                                                                 Node sample = dsRel.getEndNode();
                                                                 addNodeDetailsToResults(sample, results, label);
-                                                                addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, studyLabel);
+                                                                addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
                                                             }
                                                         }
-                                                        
+                                                    }
+                                                    else if (label.equals("Lane")) {
+                                                        for (Relationship dsRel: donor.getRelationships(VrtrackRelationshipTypes.sample, out)) {
+                                                            Node sample = dsRel.getEndNode();
+                                                            for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
+                                                                Node library = salRel.getEndNode();
+                                                                for (Relationship llRel: sample.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                                    Node lane = llRel.getEndNode();
+                                                                    addNodeDetailsToResults(lane, results, label);
+                                                                    addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1232,17 +1489,34 @@ public class Service {
                                                 if (sample.hasLabel(sampleLabel)) {
                                                     if (label.equals("Sample")) {
                                                         addNodeDetailsToResults(sample, results, label);
-                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, studyLabel);
+                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
                                                     }
                                                     else if (label.equals("Donor")) {
                                                         Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
                                                         if (sdRel != null) {
                                                             Node donor = sdRel.getStartNode();
                                                             addNodeDetailsToResults(donor, results, label);
-                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                        }
+                                                    }
+                                                    else if (label.equals("Lane")) {
+                                                        for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
+                                                            Node library = salRel.getEndNode();
+                                                            for (Relationship llRel: sample.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                                Node lane = llRel.getEndNode();
+                                                                addNodeDetailsToResults(lane, results, label);
+                                                                addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                            }
                                                         }
                                                     }
                                                 }
+                                            }
+                                        }
+                                        else if (label.equals("Lane")) {
+                                            for (Relationship slRel: study.getRelationships(VrtrackRelationshipTypes.created_for, in)) {
+                                                Node lane = slRel.getStartNode();
+                                                addNodeDetailsToResults(lane, results, label);
+                                                addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
                                             }
                                         }
                                         else if (addExtra) {
@@ -1251,7 +1525,7 @@ public class Service {
                                                 
                                                 if (sampleOrDonor.hasLabel(desiredLabel)) {
                                                     addNodeDetailsToResults(sampleOrDonor, results, label);
-                                                    addExtraVRTrackInfo(sampleOrDonor, results.get(sampleOrDonor.getId()), donorLabel, sampleLabel, studyLabel);
+                                                    addExtraVRTrackInfo(sampleOrDonor, results.get(sampleOrDonor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
                                                 }
                                             }
                                         }
@@ -1270,7 +1544,7 @@ public class Service {
                 for (Node node : allNodes) {
                     addNodeDetailsToResults(node, results, label);
                     if (addExtra) {
-                        addExtraVRTrackInfo(node, results.get(node.getId()), donorLabel, sampleLabel, studyLabel);
+                        addExtraVRTrackInfo(node, results.get(node.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
                     }
                 }
             }
