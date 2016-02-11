@@ -70,7 +70,7 @@ public class NodeExtraTest {
         prop.put("qcgrind_qc_status", "passed");
         prop.put("npg_manual_qc", "1");
         prop.put("neo4j_label", "Lane");
-        prop.put("sample_public_name", "sp1");
+        prop.put("individual_name", "sp1");
         prop.put("sample_name", "s1");
         prop.put("library_id", "1");
         prop.put("alignmentstats:result1", "1");

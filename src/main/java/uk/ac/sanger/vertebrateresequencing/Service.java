@@ -1100,7 +1100,14 @@ public class Service {
                     
                     Object gpObj = sample.getProperty("public_name", null);
                     if (gpObj != null) {
-                        props.put("sample_public_name", gpObj.toString());
+                        props.put("individual_name", gpObj.toString());
+                    }
+                    else {
+                        Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+                        if (sdRel != null) {
+                            Node donor = sdRel.getStartNode();
+                            props.put("individual_name", donor.getProperty("id").toString());
+                        }
                     }
                 }
             }
@@ -1108,7 +1115,7 @@ public class Service {
             // get some of the essential (what QCGrind needs to display)
             // sequencing stats
             Relationship lfRel = node.getSingleRelationship(VrtrackRelationshipTypes.aligned, out);
-            if (llRel != null) {
+            if (lfRel != null) {
                 Node fse = lfRel.getEndNode();
                 Object gpObj = fse.getProperty("manual_qc", null);
                 if (gpObj != null) {
@@ -1440,7 +1447,7 @@ public class Service {
                                                                     else if (label.equals("Lane")) {
                                                                         for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
                                                                             Node library = salRel.getEndNode();
-                                                                            for (Relationship llRel: sample.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                                            for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
                                                                                 Node lane = llRel.getEndNode();
                                                                                 addNodeDetailsToResults(lane, results, label);
                                                                                 addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
@@ -1469,7 +1476,7 @@ public class Service {
                                                             Node sample = dsRel.getEndNode();
                                                             for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
                                                                 Node library = salRel.getEndNode();
-                                                                for (Relationship llRel: sample.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                                for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
                                                                     Node lane = llRel.getEndNode();
                                                                     addNodeDetailsToResults(lane, results, label);
                                                                     addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
@@ -1502,7 +1509,7 @@ public class Service {
                                                     else if (label.equals("Lane")) {
                                                         for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
                                                             Node library = salRel.getEndNode();
-                                                            for (Relationship llRel: sample.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                            for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
                                                                 Node lane = llRel.getEndNode();
                                                                 addNodeDetailsToResults(lane, results, label);
                                                                 addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
