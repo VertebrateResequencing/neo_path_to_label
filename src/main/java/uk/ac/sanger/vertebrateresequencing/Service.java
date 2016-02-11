@@ -2727,4 +2727,75 @@ public class Service {
         
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
+    
+    /*
+        We need a quick way of setting the qcgrind_qc_status on Lane nodes, but
+        only if the user has permission based on the groups the lane belongs to
+    */
+    
+    @GET
+    @Path("/vrtrack_set_lane_qc_status/{database}/{user}/{lane}/{status}") 
+    public Response getVRTrackFiles(@PathParam("database") String database,
+                                    @PathParam("user") String user,
+                                    @PathParam("lane") String laneUnique,
+                                    @PathParam("status") String status,
+                                    @Context GraphDatabaseService db) throws IOException {
+        
+        Label laneLabel = DynamicLabel.label(database + "|VRTrack|Lane");
+        Label userLabel = DynamicLabel.label(database + "|VRTrack|User");
+        Label groupLabel = DynamicLabel.label(database + "|VRTrack|Group");
+        
+        HashMap<String, String> results = new HashMap<String, String>();
+        try (Transaction tx = db.beginTx()) {
+            Node lane = db.findNode(laneLabel, "unique", laneUnique);
+            
+            if (lane != null) {
+                // get this user's node id
+                Node userNode = db.findNode(userLabel, "username", user);
+                
+                if (userNode != null) {
+                    long userId = userNode.getId();
+                    
+                    Relationship rel = lane.getSingleRelationship(VrtrackRelationshipTypes.created_for, out);
+                    if (rel != null) {
+                        Node study = rel.getEndNode();
+                        
+                        boolean foundUser = false;
+                        SGLOOP: for (Relationship sgRel : study.getRelationships(VrtrackRelationshipTypes.has, in)) {
+                            Node group = sgRel.getStartNode();
+                            if (group.hasLabel(groupLabel)) {
+                                for (Relationship guRel : group.getRelationships(VrtrackRelationshipTypes.administers, in)) {
+                                    Node admin = guRel.getStartNode();
+                                    if (admin.getId() == userId) {
+                                        foundUser = true;
+                                        break SGLOOP;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (foundUser) {
+                            lane.setProperty("qcgrind_qc_status", status);
+                            results.put("success", "Lane " + laneUnique + " qcgrind_qc_status set to " + status);
+                            tx.success();
+                        }
+                        else {
+                            results.put("errors", "User " + user + " does not administer any groups that lane " + laneUnique + " belongs to");
+                        }
+                    }
+                    else {
+                        results.put("errors", "Lane " + laneUnique + " was not properly connected to a study");
+                    }
+                }
+                else {
+                    results.put("errors", "User " + user + " does not administer any groups");
+                }
+            }
+            else {
+                results.put("errors", "Lane " + laneUnique + " not found in graph db");
+            }
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
 }
