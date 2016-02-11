@@ -1314,7 +1314,13 @@ public class Service {
                         if (key.equals("date") || key.equals("uuid")) {
                             continue;
                         }
-                        props.put("auto_qc:" + key, entry.getValue().toString());
+                        Object value = entry.getValue();
+                        if (value instanceof String) {
+                            props.put("auto_qc:" + key, value.toString());
+                        }
+                        else if (value instanceof String[]) {
+                            props.put("auto_qc:" + key, Arrays.toString((String[])value));
+                        }
                     }
                 }
             }
