@@ -742,7 +742,7 @@ public class Service {
                 // get the single copy_number_by_chromosome_plot shared by
                 // all samples of our donor (but not all samples may have the
                 // plot attached, so we keep testing till we find it)
-                if (cnbcPlot == null) {
+                if (cnbcPlot == null && ! qcStatus.equals('failed')) {
                     Relationship scnbcpRel = sample.getSingleRelationship(VrtrackRelationshipTypes.copy_number_by_chromosome_plot, out);
                     if (scnbcpRel != null) {
                         Node cnbcpNode = scnbcpRel.getEndNode();
