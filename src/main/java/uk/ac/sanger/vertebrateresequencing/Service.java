@@ -742,7 +742,7 @@ public class Service {
                 // get the single copy_number_by_chromosome_plot shared by
                 // all samples of our donor (but not all samples may have the
                 // plot attached, so we keep testing till we find it)
-                if (cnbcPlot == null && ! qcStatus.equals('failed')) {
+                if ((cnbcPlot == null) && (! qcStatus.equals("failed"))) {
                     Relationship scnbcpRel = sample.getSingleRelationship(VrtrackRelationshipTypes.copy_number_by_chromosome_plot, out);
                     if (scnbcpRel != null) {
                         Node cnbcpNode = scnbcpRel.getEndNode();
@@ -1112,11 +1112,29 @@ public class Service {
                 }
             }
             
+            // get the alignment file that has the most qc_file relationships
+            Node fse = null;
+            Node badFse = null;
+            int qcFileRelCount = 0;
+            for (Relationship lfRel : node.getRelationships(VrtrackRelationshipTypes.aligned, out)) {
+                Node file = lfRel.getEndNode();
+                int thisCount = 0;
+                for (Relationship fqRel: file.getRelationships(VrtrackRelationshipTypes.qc_file, out)) {
+                    thisCount++;
+                }
+                
+                if (thisCount > qcFileRelCount) {
+                    qcFileRelCount = thisCount;
+                    fse = file;
+                }
+                else {
+                    badFse = file;
+                }
+            }
+            
             // get some of the essential (what QCGrind needs to display)
             // sequencing stats
-            Relationship lfRel = node.getSingleRelationship(VrtrackRelationshipTypes.aligned, out);
-            if (lfRel != null) {
-                Node fse = lfRel.getEndNode();
+            if (fse != null) {
                 Object gpObj = fse.getProperty("manual_qc", null);
                 if (gpObj != null) {
                     props.put("npg_manual_qc", gpObj.toString());
@@ -1322,6 +1340,12 @@ public class Service {
                             props.put("auto_qc:" + key, Arrays.toString((String[])value));
                         }
                     }
+                }
+            }
+            else if (badFse != null) {
+                Object gpObj = badFse.getProperty("manual_qc", null);
+                if (gpObj != null) {
+                    props.put("npg_manual_qc", gpObj.toString());
                 }
             }
         }
@@ -1620,7 +1644,7 @@ public class Service {
                 }
             }
         }
-
+        
         return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
     }
     
