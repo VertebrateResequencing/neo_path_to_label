@@ -1087,7 +1087,18 @@ public class Service {
         else if (node.hasLabel(laneLabel)) {
             props.put("neo4j_label", "Lane");
             
-            // get our library id, sample name and sample public name
+            // get our study details, library id, sample identifiers and gender
+            Relationship lstRel = node.getSingleRelationship(VrtrackRelationshipTypes.created_for, out);
+            if (lstRel != null) {
+                Node study = lstRel.getEndNode();
+                props.put("study_id", study.getProperty("id").toString());
+                props.put("study_name", study.getProperty("name").toString());
+                Object gpObj = study.getProperty("accession", null);
+                if (gpObj != null) {
+                    props.put("study_accession", gpObj.toString());
+                }
+            }
+            
             Relationship llRel = node.getSingleRelationship(VrtrackRelationshipTypes.sequenced, in);
             if (llRel != null) {
                 Node library = llRel.getStartNode();
@@ -1108,6 +1119,22 @@ public class Service {
                             Node donor = sdRel.getStartNode();
                             props.put("individual_name", donor.getProperty("id").toString());
                         }
+                    }
+                    
+                    gpObj = sample.getProperty("accession", null);
+                    if (gpObj != null) {
+                        props.put("sample_accession", gpObj.toString());
+                    }
+                    
+                    gpObj = sample.getProperty("supplier_name", null);
+                    if (gpObj != null) {
+                        props.put("sample_supplier_name", gpObj.toString());
+                    }
+                    
+                    Relationship sgRel = sample.getSingleRelationship(VrtrackRelationshipTypes.gender, out);
+                    if (sgRel != null) {
+                        Node gender = sgRel.getEndNode();
+                        props.put("gender", gender.getProperty("gender").toString());
                     }
                 }
             }

@@ -70,8 +70,14 @@ public class NodeExtraTest {
         prop.put("qcgrind_qc_status", "passed");
         prop.put("npg_manual_qc", "1");
         prop.put("neo4j_label", "Lane");
+        prop.put("study_id", "2");
+        prop.put("study_name", "study two");
+        prop.put("study_accession", "sacc2");
         prop.put("individual_name", "sp1");
         prop.put("sample_name", "s1");
+        prop.put("sample_accession", "sacc1");
+        prop.put("sample_supplier_name", "sn1");
+        prop.put("gender", "M");
         prop.put("library_id", "1");
         prop.put("alignmentstats:result1", "1");
         prop.put("alignmentstats:result2", "2");
@@ -96,8 +102,8 @@ public class NodeExtraTest {
     public static final String MODEL_STATEMENT =
             new StringBuilder()
                     .append("CREATE (stu1:`vdp|VRTrack|Study` {id:'1'})")
-                    .append("CREATE (stu2:`vdp|VRTrack|Study` {id:'2'})")
-                    .append("CREATE (s1:`vdp|VRTrack|Sample` {name:'s1',control:'1',public_name:'sp1',created_date:'123',qc_selected:'1',qc_passed:'1',qc_passed_genotyping:'1'})")
+                    .append("CREATE (stu2:`vdp|VRTrack|Study` {id:'2',name:'study two',accession:'sacc2'})")
+                    .append("CREATE (s1:`vdp|VRTrack|Sample` {name:'s1',control:'1',public_name:'sp1',created_date:'123',qc_selected:'1',qc_passed:'1',qc_passed_genotyping:'1',accession:'sacc1',supplier_name:'sn1'})")
                     .append("CREATE (s2:`vdp|VRTrack|Sample` {name:'s2',control:'0',public_name:'sp2',created_date:'125',qc_freeze:'1',qc_passed:'1',qc_passed_genotyping:'1'})")
                     .append("CREATE (s3:`vdp|VRTrack|Sample` {name:'s3',control:'0',public_name:'sp3',created_date:'124',qc_defer:'1',qc_passed:'1'})")
                     .append("CREATE (d1:`vdp|VRTrack|Donor` {id:'d1'})")
@@ -114,6 +120,7 @@ public class NodeExtraTest {
                     .append("CREATE (verify:`vdp|VRTrack|Verify_Bam_ID` {uuid:'v1',date:'126',result1:'1',result2:'2'})")
                     .append("CREATE (bam1:`vdp|VRPipe|FileSystemElement` {path:'/imported/lan1.bam',basename:'lan1.bam'})")
                     .append("CREATE (autoqc:`vdp|VRTrack|Auto_QC` {uuid:'aqc1',date:'128',result1:'1',result2:'2'})")
+                    .append("CREATE (gender:`vdp|VRTrack|Gender` {gender:'M'})")
                     .append("CREATE (d1)-[:sample]->(s1)")
                     .append("CREATE (d1)-[:sample]->(s2)")
                     .append("CREATE (d1)-[:sample]->(s3)")
@@ -122,8 +129,10 @@ public class NodeExtraTest {
                     .append("CREATE (stu2)-[:member]->(s2)")
                     .append("CREATE (stu2)-[:member { preferred: '1' }]->(s3)")
                     .append("CREATE (stu1)-[:member]->(s3)")
+                    .append("CREATE (s1)-[:gender]->(gender)")
                     .append("CREATE (s1)-[:prepared]->(lib1)")
                     .append("CREATE (lib1)-[:sequenced]->(lan1)")
+                    .append("CREATE (lan1)-[:created_for]->(stu2)")
                     .append("CREATE (lan1)-[:aligned]->(cram1)")
                     .append("CREATE (cram1)-[:qc_file]->(qcf1)")
                     .append("CREATE (cram1)-[:qc_file]->(qcf2)")
