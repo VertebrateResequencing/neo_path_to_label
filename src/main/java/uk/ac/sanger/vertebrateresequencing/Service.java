@@ -2842,9 +2842,26 @@ public class Service {
         only if the user has permission based on the groups the lane belongs to
     */
     
+    private boolean userAdminsStudy (Node study, Label groupLabel, Long userId) {
+        boolean foundUser = false;
+        SGLOOP: for (Relationship sgRel : study.getRelationships(VrtrackRelationshipTypes.has, in)) {
+            Node group = sgRel.getStartNode();
+            if (group.hasLabel(groupLabel)) {
+                for (Relationship guRel : group.getRelationships(VrtrackRelationshipTypes.administers, in)) {
+                    Node admin = guRel.getStartNode();
+                    if (admin.getId() == userId) {
+                        foundUser = true;
+                        break SGLOOP;
+                    }
+                }
+            }
+        }
+        return foundUser;
+    }
+    
     @GET
     @Path("/vrtrack_set_lane_qc_status/{database}/{user}/{lane}/{status}") 
-    public Response getVRTrackFiles(@PathParam("database") String database,
+    public Response setLaneQCStatus(@PathParam("database") String database,
                                     @PathParam("user") String user,
                                     @PathParam("lane") String laneUnique,
                                     @PathParam("status") String status,
@@ -2869,19 +2886,7 @@ public class Service {
                     if (rel != null) {
                         Node study = rel.getEndNode();
                         
-                        boolean foundUser = false;
-                        SGLOOP: for (Relationship sgRel : study.getRelationships(VrtrackRelationshipTypes.has, in)) {
-                            Node group = sgRel.getStartNode();
-                            if (group.hasLabel(groupLabel)) {
-                                for (Relationship guRel : group.getRelationships(VrtrackRelationshipTypes.administers, in)) {
-                                    Node admin = guRel.getStartNode();
-                                    if (admin.getId() == userId) {
-                                        foundUser = true;
-                                        break SGLOOP;
-                                    }
-                                }
-                            }
-                        }
+                        boolean foundUser = userAdminsStudy(study, groupLabel, userId);
                         
                         if (foundUser) {
                             lane.setProperty("qcgrind_qc_status", status);
@@ -2902,6 +2907,70 @@ public class Service {
             }
             else {
                 results.put("errors", "Lane " + laneUnique + " not found in graph db");
+            }
+        }
+        
+        return Response.ok().entity(objectMapper.writeValueAsString(results)).build();
+    }
+    
+    /*
+        We need a quick way of setting the auto_qc_settings on Study nodes, but
+        only if the user has permission based on the groups the study belongs to
+    */
+    
+    @GET
+    @Path("/vrtrack_set_study_auto_qc_settings/{database}/{user}/{study}/{settings}") 
+    public Response setStudyQCSettings(@PathParam("database") String database,
+                                       @PathParam("user") String user,
+                                       @PathParam("study") String studyNodeID,
+                                       @PathParam("settings") String settings,
+                                       @Context GraphDatabaseService db) throws IOException {
+        
+        Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
+        Label userLabel = DynamicLabel.label(database + "|VRTrack|User");
+        Label groupLabel = DynamicLabel.label(database + "|VRTrack|Group");
+        
+        HashMap<String, String> results = new HashMap<String, String>();
+        try (Transaction tx = db.beginTx()) {
+            Node study = null;
+            try {
+                study = db.getNodeById(Long.parseLong(studyNodeID));
+            }
+            catch (NotFoundException e) {
+                // handled below
+            }
+            
+            if (study != null) {
+                if (study.hasLabel(studyLabel)) {
+                    String studyID = study.getProperty("id").toString();
+                    
+                    // get this user's node id
+                    Node userNode = db.findNode(userLabel, "username", user);
+                    
+                    if (userNode != null) {
+                        long userId = userNode.getId();
+                        
+                        boolean foundUser = userAdminsStudy(study, groupLabel, userId);
+                        
+                        if (foundUser) {
+                            study.setProperty("auto_qc_settings", settings);
+                            results.put("success", "Study " + studyID + " auto_qc_settings set to " + settings);
+                            tx.success();
+                        }
+                        else {
+                            results.put("errors", "User " + user + " does not administer any groups that study " + studyID + " belongs to");
+                        }
+                    }
+                    else {
+                        results.put("errors", "User " + user + " does not administer any groups");
+                    }
+                }
+                else {
+                    results.put("errors", "Node with id " + studyNodeID + " is not a Study node");
+                }
+            }
+            else {
+                results.put("errors", "Study with node id " + studyNodeID + " not found in graph db");
             }
         }
         

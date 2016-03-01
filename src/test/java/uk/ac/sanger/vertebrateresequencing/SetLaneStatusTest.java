@@ -44,6 +44,34 @@ public class SetLaneStatusTest {
         assertEquals(expected, actual);
     }
     
+    // also test the similar vrtrack_set_study_auto_qc_settings service here
+    @Test
+    public void shouldSetStudySettings() {
+        HTTP.Response response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_set_study_auto_qc_settings/vdp/sb10/2/somejson").toString());
+        HashMap actual = response.content();
+        LinkedHashMap<String, String> expected = new LinkedHashMap<String, String>();
+        expected.put("success", "Study 1 auto_qc_settings set to somejson");
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_set_study_auto_qc_settings/vdp/sb10/6/somejson").toString());
+        actual = response.content();
+        expected = new LinkedHashMap<String, String>();
+        expected.put("errors", "Study with node id 6 not found in graph db");
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_set_study_auto_qc_settings/vdp/hacker/2/somejson").toString());
+        actual = response.content();
+        expected = new LinkedHashMap<String, String>();
+        expected.put("errors", "User hacker does not administer any groups");
+        assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/vrtrack_set_study_auto_qc_settings/vdp/10sb/2/somejson").toString());
+        actual = response.content();
+        expected = new LinkedHashMap<String, String>();
+        expected.put("errors", "User 10sb does not administer any groups that study 1 belongs to");
+        assertEquals(expected, actual);
+    }
+    
     public static final String MODEL_STATEMENT =
             new StringBuilder()
                     .append("CREATE (u1:`vdp|VRTrack|User` {username:'sb10'})")
