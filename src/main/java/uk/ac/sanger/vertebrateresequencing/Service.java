@@ -1107,6 +1107,7 @@ public class Service {
                 Relationship lsRel = library.getSingleRelationship(VrtrackRelationshipTypes.prepared, in);
                 if (lsRel != null) {
                     Node sample = lsRel.getStartNode();
+                    props.put("sample_node_id", String.valueOf(sample.getId()));
                     props.put("sample_name", sample.getProperty("name").toString());
                     
                     Object gpObj = sample.getProperty("public_name", null);

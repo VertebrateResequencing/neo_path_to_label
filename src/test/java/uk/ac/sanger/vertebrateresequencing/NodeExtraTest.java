@@ -74,6 +74,7 @@ public class NodeExtraTest {
         prop.put("study_name", "study two");
         prop.put("study_accession", "sacc2");
         prop.put("individual_name", "sp1");
+        prop.put("sample_node_id", "2");
         prop.put("sample_name", "s1");
         prop.put("sample_accession", "sacc1");
         prop.put("sample_supplier_name", "sn1");
