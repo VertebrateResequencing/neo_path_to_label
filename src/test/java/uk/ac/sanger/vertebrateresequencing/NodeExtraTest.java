@@ -93,8 +93,6 @@ public class NodeExtraTest {
         prop.put("verifybamiddata:result2", "2");
         prop.put("alignmentstats_plot:Coverage", "/seq/lan1.cram.plot.coverage");
         prop.put("alignmentstats_plot:Insert Size", "/seq/lan1.cram.plot.insert_size");
-        prop.put("auto_qc:result1", "1");
-        prop.put("auto_qc:result2", "2");
         expected.put("7", prop);
         
         assertEquals(expected, actual);
@@ -120,7 +118,6 @@ public class NodeExtraTest {
                     .append("CREATE (stats:`vdp|VRTrack|Bam_Stats` {uuid:'s1',date:'125',result1:'1',result2:'2'})")
                     .append("CREATE (verify:`vdp|VRTrack|Verify_Bam_ID` {uuid:'v1',date:'126',result1:'1',result2:'2'})")
                     .append("CREATE (bam1:`vdp|VRPipe|FileSystemElement` {path:'/imported/lan1.bam',basename:'lan1.bam'})")
-                    .append("CREATE (autoqc:`vdp|VRTrack|Auto_QC` {uuid:'aqc1',date:'128',result1:'1',result2:'2'})")
                     .append("CREATE (gender:`vdp|VRTrack|Gender` {gender:'M'})")
                     .append("CREATE (d1)-[:sample]->(s1)")
                     .append("CREATE (d1)-[:sample]->(s2)")
@@ -144,6 +141,5 @@ public class NodeExtraTest {
                     .append("CREATE (qcf1)-[:bamstats_plot]->(plot1)")
                     .append("CREATE (qcf1)-[:bamstats_plot]->(plot2)")
                     .append("CREATE (cram1)-[:imported]->(bam1)")
-                    .append("CREATE (bam1)-[:auto_qc_status]->(autoqc)")
                     .toString();
 }

@@ -1318,57 +1318,6 @@ public class Service {
                         }
                     }
                 }
-                
-                // get the most recent auto qc status, which might be attached
-                // to this fse or an fse attached to this one via imported
-                Node autoQC = null;
-                int latestDate = 0;
-                for (Relationship faRel: fse.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
-                    Node thisNode = faRel.getEndNode();
-                    
-                    int thisDate = 0;
-                    if (thisNode.hasProperty("date")) {
-                        thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
-                    }
-                    if (autoQC == null || thisDate > latestDate) {
-                        autoQC = thisNode;
-                        latestDate = thisDate;
-                    }
-                }
-                if (autoQC == null) {
-                    for (Relationship fiRel: fse.getRelationships(VrtrackRelationshipTypes.imported, out)) {
-                        Node importFSE = fiRel.getEndNode();
-                        
-                        for (Relationship iaRel: importFSE.getRelationships(VrtrackRelationshipTypes.auto_qc_status, out)) {
-                            Node thisNode = iaRel.getEndNode();
-                            
-                            int thisDate = 0;
-                            if (thisNode.hasProperty("date")) {
-                                thisDate = Integer.parseInt(thisNode.getProperty("date").toString());
-                            }
-                            if (autoQC == null || thisDate > latestDate) {
-                                autoQC = thisNode;
-                                latestDate = thisDate;
-                            }
-                        }
-                    }
-                }
-                if (autoQC != null) {
-                    Map<String, Object> autoProps = autoQC.getAllProperties();
-                    for (Map.Entry<String, Object> entry : autoProps.entrySet()) {
-                        String key = entry.getKey();
-                        if (key.equals("date") || key.equals("uuid")) {
-                            continue;
-                        }
-                        Object value = entry.getValue();
-                        if (value instanceof String) {
-                            props.put("auto_qc:" + key, value.toString());
-                        }
-                        else if (value instanceof String[]) {
-                            props.put("auto_qc:" + key, Arrays.toString((String[])value));
-                        }
-                    }
-                }
             }
             else if (badFse != null) {
                 Object gpObj = badFse.getProperty("manual_qc", null);
