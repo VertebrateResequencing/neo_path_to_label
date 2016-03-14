@@ -25,6 +25,8 @@ import java.util.List;
 import java.lang.reflect.Array;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Collections;
@@ -395,6 +397,7 @@ public class Service {
                                @QueryParam("status") String statusToSet,
                                @QueryParam("reason") String reasonToSet,
                                @QueryParam("time") String timeToSet,
+                               @QueryParam("studies") String studiesStr,
                                @Context GraphDatabaseService db) throws IOException {
         
         Label studyLabel = DynamicLabel.label(database + "|VRTrack|Study");
@@ -481,12 +484,55 @@ public class Service {
             
             donorDetails.put("id", donor.getProperty("id").toString()); 
             
-            // we want the details of all the samples under our donor
-            HashMap<String, List<Map.Entry<Node,HashMap<String, Object>>>> studyToSampleInfo = new HashMap<String, List<Map.Entry<Node,HashMap<String, Object>>>>();
+            // we want the details of all the samples under our donor, limited
+            // to those sample that belong to the supplied studies, if any were
+            // supplied
+            HashMap<Integer, Integer> userStudies = new HashMap<Integer, Integer>();
+            boolean checkUserStudies = false;
+            if (studiesStr != null) {
+                String[] studyIds = studiesStr.split(",");
+                for (String studyIdStr: studyIds) {
+                    Node study = null;
+                    try {
+                        study = db.getNodeById(Long.parseLong(studyIdStr));
+                    }
+                    catch (NotFoundException e) {
+                        continue;
+                    }
+                    if (study.hasLabel(studyLabel)) {
+                        userStudies.put(Integer.parseInt(study.getProperty("id").toString()), Integer.valueOf(1));
+                        checkUserStudies = true;
+                    }
+                }
+            }
+            HashMap<Integer, List<Map.Entry<Node,HashMap<String, Object>>>> studyToSampleInfo = new HashMap<Integer, List<Map.Entry<Node,HashMap<String, Object>>>>();
             HashMap<String, Integer> donorSampleNames = new HashMap<String, Integer>();
             String cnbcPlot = null;
             for (Relationship dsrel: donor.getRelationships(VrtrackRelationshipTypes.sample, out)) {
                 Node sample = dsrel.getEndNode();
+                
+                // limit to samples that belong to the user's desired studies
+                ArrayList<Integer> sampleStudies = new ArrayList<Integer>();
+                boolean inUserStudies = false;
+                for (Relationship ssRel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
+                    Node study = ssRel.getStartNode();
+                    if (! study.hasLabel(studyLabel)) {
+                        continue;
+                    }
+                    
+                    Integer studyID = Integer.parseInt(study.getProperty("id").toString());
+                    sampleStudies.add(studyID);
+                    
+                    if (checkUserStudies) {
+                        if (userStudies.get(studyID) != null) {
+                            inUserStudies = true;
+                        }
+                    }
+                }
+                if (checkUserStudies && ! inUserStudies) {
+                    continue;
+                }
+                
                 donorSampleNames.put(sample.getProperty("name").toString(), Integer.valueOf(1));
                 
                 // first set new qc status if supplied
@@ -545,13 +591,16 @@ public class Service {
                             break;
                         case "unset_passed":
                             sample.setProperty("qc_passed", "0");
+                            sample.setProperty("qc_exclude_from_analysis", "0");
                             qcRelsToRemove.add(VrtrackRelationshipTypes.passed_by);
                             qcRelsToRemove.add(VrtrackRelationshipTypes.excluded_by);
                             break;
                         case "set_excluded":
-                            sample.setProperty("qc_exclude_from_analysis", "1");
-                            suRelType = VrtrackRelationshipTypes.excluded_by;
-                            qcRelsToRemove.add(VrtrackRelationshipTypes.excluded_by);
+                            if (sample.hasProperty("qc_passed") && sample.getProperty("qc_passed", "0").equals("1")) {
+                                sample.setProperty("qc_exclude_from_analysis", "1");
+                                suRelType = VrtrackRelationshipTypes.excluded_by;
+                                qcRelsToRemove.add(VrtrackRelationshipTypes.excluded_by);
+                            }
                             break;
                         case "unset_excluded":
                             sample.setProperty("qc_exclude_from_analysis", "0");
@@ -685,30 +734,22 @@ public class Service {
                 // for this sample. We're only interested in the results between
                 // sample pairs where at least one sample is in the largest
                 // study, so here we only generate study counts
-                ArrayList<Integer> sampleStudies = new ArrayList<Integer>();
-                for (Relationship ssRel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
-                    Node study = ssRel.getStartNode();
-                    if (! study.hasLabel(studyLabel)) {
-                        continue;
-                    }
-                    
-                    String studyID = study.getProperty("id").toString();
-                    sampleStudies.add(Integer.parseInt(studyID));
-                    
+                for (Integer studyID : sampleStudies) {
                     List<Map.Entry<Node,HashMap<String, Object>>> samplesList = null;
                     if (studyToSampleInfo.containsKey(studyID)) {
-                        samplesList = studyToSampleInfo.get(studyID);
+                       samplesList = studyToSampleInfo.get(studyID);
                     }
                     else {
-                        samplesList = new ArrayList<>();
-                        studyToSampleInfo.put(studyID, samplesList);
+                       samplesList = new ArrayList<>();
+                       studyToSampleInfo.put(studyID, samplesList);
                     }
                     java.util.Map.Entry<Node,HashMap<String, Object>> nodeAndInfo = new java.util.AbstractMap.SimpleEntry<>(sample, sampleInfo);
                     samplesList.add(nodeAndInfo);
                 }
                 
                 Collections.sort(sampleStudies);
-                sampleInfo.put("study_ids", StringUtils.join(sampleStudies, ","));
+                Set<Integer> sampleStudiesUnique = new HashSet<Integer>(sampleStudies);
+                sampleInfo.put("study_ids", StringUtils.join(sampleStudiesUnique, ","));
                 
                 // get the latest cnv calls
                 Node callNode = null;
@@ -778,9 +819,9 @@ public class Service {
             }
             
             // work out the largest study
-            String largestStudy = null;
+            Integer largestStudy = null;
             int largestStudyCount = 0;
-            for (Map.Entry<String, List<Map.Entry<Node,HashMap<String, Object>>>> entry : studyToSampleInfo.entrySet()) {
+            for (Map.Entry<Integer, List<Map.Entry<Node,HashMap<String, Object>>>> entry : studyToSampleInfo.entrySet()) {
                 int size = entry.getValue().size();
                 if (size > largestStudyCount) {
                     largestStudy = entry.getKey();
@@ -790,8 +831,8 @@ public class Service {
             
             // now we have everything we need to get discordance results
             HashMap<String, Integer> doneSamples = new HashMap<String, Integer>();
-            for (Map.Entry<String, List<Map.Entry<Node,HashMap<String, Object>>>> entry : studyToSampleInfo.entrySet()) {
-                String thisStudy = entry.getKey();
+            for (Map.Entry<Integer, List<Map.Entry<Node,HashMap<String, Object>>>> entry : studyToSampleInfo.entrySet()) {
+                Integer thisStudy = entry.getKey();
                 for (Map.Entry<Node,HashMap<String, Object>> nodeAndInfo : entry.getValue()) {
                     HashMap<String, Object> sampleInfo = nodeAndInfo.getValue();
                     

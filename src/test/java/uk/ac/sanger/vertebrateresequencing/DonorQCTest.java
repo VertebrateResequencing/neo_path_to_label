@@ -239,6 +239,92 @@ public class DonorQCTest {
         expected.put("donor_details", donorDetails);
         
         assertEquals(expected, actual);
+        
+        // setting to excluded without passed does nothing
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/donor_qc/vdp/u2/11?sample=s5&status=set_excluded&time=130").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        samples = new HashMap<String, Object>();
+        samples.put("6", sampleInfo1);
+        samples.put("7", sampleInfo2v2);
+        samples.put("8", sampleInfo3);
+        samples.put("9", sampleInfo4);
+        samples.put("10", sampleInfo5v3);
+        expected.put("samples", samples);
+        expected.put("admin_details", adminDetails1);
+        expected.put("donor_details", donorDetails);
+        
+        assertEquals(expected, actual);
+        
+        // setting passed works
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/donor_qc/vdp/u2/11?sample=s5&status=set_passed&time=131").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        samples = new HashMap<String, Object>();
+        samples.put("6", sampleInfo1);
+        samples.put("7", sampleInfo2v2);
+        samples.put("8", sampleInfo3);
+        samples.put("9", sampleInfo4);
+        sampleInfo5v3.put("qc_passed_fluidigm", true);
+        samples.put("10", sampleInfo5v3);
+        expected.put("samples", samples);
+        expected.put("admin_details", adminDetails1);
+        expected.put("donor_details", donorDetails);
+        
+        assertEquals(expected, actual);
+        
+        // setting to excluded works
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/donor_qc/vdp/u2/11?sample=s5&status=set_excluded&time=132").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        samples = new HashMap<String, Object>();
+        samples.put("6", sampleInfo1);
+        samples.put("7", sampleInfo2v2);
+        samples.put("8", sampleInfo3);
+        samples.put("9", sampleInfo4);
+        sampleInfo5v3.put("qc_exclude_from_analysis", true);
+        samples.put("10", sampleInfo5v3);
+        expected.put("samples", samples);
+        expected.put("admin_details", adminDetails1);
+        expected.put("donor_details", donorDetails);
+        
+        assertEquals(expected, actual);
+        
+        // unsetting excluded works
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/donor_qc/vdp/u2/11?sample=s5&status=unset_excluded&time=133").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        samples = new HashMap<String, Object>();
+        samples.put("6", sampleInfo1);
+        samples.put("7", sampleInfo2v2);
+        samples.put("8", sampleInfo3);
+        samples.put("9", sampleInfo4);
+        sampleInfo5v3.put("qc_exclude_from_analysis", false);
+        samples.put("10", sampleInfo5v3);
+        expected.put("samples", samples);
+        expected.put("admin_details", adminDetails1);
+        expected.put("donor_details", donorDetails);
+        
+        assertEquals(expected, actual);
+        
+        // supplying study ids limits what samples we get back from donor_qc
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/donor_qc/vdp/u2/11?studies=3").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        samples = new HashMap<String, Object>();
+        samples.put("6", sampleInfo1);
+        samples.put("7", sampleInfo2v2);
+        samples.put("8", sampleInfo3);
+        expected.put("samples", samples);
+        expected.put("admin_details", adminDetails1);
+        expected.put("donor_details", donorDetails);
+        
+        assertEquals(expected, actual);
     }
     
     public static final String MODEL_STATEMENT =
