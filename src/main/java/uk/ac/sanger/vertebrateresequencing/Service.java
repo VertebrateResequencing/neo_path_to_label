@@ -51,7 +51,7 @@ public class Service {
     
     enum VrtrackRelationshipTypes implements RelationshipType {
         sequenced, prepared, gender, member, sample, placed, section, has, created_for, aligned,
-        administers, failed_by, selected_by, passed_by, passed_genotyping_by, frozen_by, deferred_by, processed, imported,
+        administers, failed_by, selected_by, passed_by, excluded_by, frozen_by, deferred_by, processed, imported,
         converted, discordance,
         cnv_calls, loh_calls, copy_number_by_chromosome_plot, cnv_plot,
         pluritest, pluritest_plot, bamstats_plot,
@@ -408,7 +408,7 @@ public class Service {
                     setSampleQC = true;
                 }
             }
-            else if (statusToSet.equals("set_passed") || statusToSet.equals("set_passed_genotyping") || statusToSet.equals("unset_passed") || statusToSet.equals("unset_passed_genotyping") || statusToSet.equals("selected") || statusToSet.equals("defer") || statusToSet.equals("freeze")) {
+            else if (statusToSet.equals("set_passed") || statusToSet.equals("set_excluded") || statusToSet.equals("unset_passed") || statusToSet.equals("unset_excluded") || statusToSet.equals("selected") || statusToSet.equals("defer") || statusToSet.equals("freeze")) {
                 setSampleQC = true;
                 reasonToSet = null;
             }
@@ -546,16 +546,16 @@ public class Service {
                         case "unset_passed":
                             sample.setProperty("qc_passed", "0");
                             qcRelsToRemove.add(VrtrackRelationshipTypes.passed_by);
-                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_genotyping_by);
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.excluded_by);
                             break;
-                        case "set_passed_genotyping":
-                            sample.setProperty("qc_passed_genotyping", "1");
-                            suRelType = VrtrackRelationshipTypes.passed_genotyping_by;
-                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_genotyping_by);
+                        case "set_excluded":
+                            sample.setProperty("qc_exclude_from_analysis", "1");
+                            suRelType = VrtrackRelationshipTypes.excluded_by;
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.excluded_by);
                             break;
-                        case "unset_passed_genotyping":
-                            sample.setProperty("qc_passed_genotyping", "0");
-                            qcRelsToRemove.add(VrtrackRelationshipTypes.passed_genotyping_by);
+                        case "unset_excluded":
+                            sample.setProperty("qc_exclude_from_analysis", "0");
+                            qcRelsToRemove.add(VrtrackRelationshipTypes.excluded_by);
                             break;
                     } 
                     
@@ -620,29 +620,30 @@ public class Service {
                 }
                 sampleInfo.put("qc_status", qcStatus);
                 
-                // independently of qc_status we'll return if either of the
-                // pass levels have been set
-                qcVal = sample.getProperty("qc_passed_genotyping", null);
+                // independently of qc_status we'll return if it has passed
+                // fluidigm checks and if it is to be excluded regardless
+                qcVal = sample.getProperty("qc_passed", null);
                 if (qcVal != null && qcVal.equals("1")) {
                     sampleInfo.put("qc_passed_fluidigm", true);
-                    sampleInfo.put("qc_passed_genotyping", true);
-                    if (qcRel == null) {
-                        qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.passed_genotyping_by, out);
-                    }
-                }
-                else {
-                    qcVal = sample.getProperty("qc_passed", null);
+                    
+                    qcVal = sample.getProperty("qc_exclude_from_analysis", null);
                     if (qcVal != null && qcVal.equals("1")) {
-                        sampleInfo.put("qc_passed_fluidigm", true);
-                        sampleInfo.put("qc_passed_genotyping", false);
+                        sampleInfo.put("qc_exclude_from_analysis", true);
                         if (qcRel == null) {
-                            qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.passed_by, out);
+                            qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.excluded_by, out);
                         }
                     }
                     else {
-                        sampleInfo.put("qc_passed_fluidigm", false);
-                        sampleInfo.put("qc_passed_genotyping", false);
+                        sampleInfo.put("qc_exclude_from_analysis", false);
                     }
+                    
+                    if (qcRel == null) {
+                        qcRel = sample.getSingleRelationship(VrtrackRelationshipTypes.passed_by, out);
+                    }
+                }
+                else {
+                    sampleInfo.put("qc_passed_fluidigm", false);
+                    sampleInfo.put("qc_exclude_from_analysis", false);
                 }
                 
                 if (qcRel != null) {
@@ -932,7 +933,7 @@ public class Service {
             String shortest = null;
             int numSamples = 0;
             int numUnresolvedFluidigm = 0; // there is fluidigm data but no qc_passed set
-            int numUnresolvedGenotyping = 0; // there is genotyping & microarray data but no final qc status set (qc_passed_genotyping is redundant)
+            int numUnresolvedGenotyping = 0; // there is genotyping & microarray data but no final qc status set
             int numUnresolved = 0; // there are samples but no final qc status set (in case a sample is not expected to ever get genotyping results, or even fluidigm?!)
             for (Relationship dsrel: node.getRelationships(VrtrackRelationshipTypes.sample, out)) {
                 Node sample = dsrel.getEndNode();

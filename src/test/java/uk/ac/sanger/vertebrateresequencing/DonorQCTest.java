@@ -29,7 +29,7 @@ public class DonorQCTest {
         sampleInfo1.put("study_ids", "2,3");
         sampleInfo1.put("qc_status", "pending");
         sampleInfo1.put("qc_passed_fluidigm", false);
-        sampleInfo1.put("qc_passed_genotyping", false);
+        sampleInfo1.put("qc_exclude_from_analysis", false);
         sampleInfo1.put("control", "1");
         sampleInfo1.put("public_name", "sp1");
         sampleInfo1.put("expected_gender", "M");
@@ -48,7 +48,7 @@ public class DonorQCTest {
         sampleInfo2.put("study_ids", "2");
         sampleInfo2.put("qc_status", "failed");
         sampleInfo2.put("qc_passed_fluidigm", false);
-        sampleInfo2.put("qc_passed_genotyping", false);
+        sampleInfo2.put("qc_exclude_from_analysis", false);
         sampleInfo2.put("control", "0");
         sampleInfo2.put("public_name", "sp2");
         sampleInfo2.put("qc_by", "u2");
@@ -60,7 +60,7 @@ public class DonorQCTest {
         sampleInfo3.put("study_ids", "2");
         sampleInfo3.put("qc_status", "selected");
         sampleInfo3.put("qc_passed_fluidigm", true);
-        sampleInfo3.put("qc_passed_genotyping", true);
+        sampleInfo3.put("qc_exclude_from_analysis", false);
         sampleInfo3.put("control", "0");
         sampleInfo3.put("public_name", "sp3");
         sampleInfo3.put("qc_by", "u2");
@@ -72,7 +72,7 @@ public class DonorQCTest {
         sampleInfo4.put("study_ids", "3");
         sampleInfo4.put("qc_status", "pending");
         sampleInfo4.put("qc_passed_fluidigm", true);
-        sampleInfo4.put("qc_passed_genotyping", false);
+        sampleInfo4.put("qc_exclude_from_analysis", true);
         sampleInfo4.put("control", "0");
         sampleInfo4.put("public_name", "sp4");
         sampleInfo4.put("qc_by", "u2");
@@ -83,7 +83,7 @@ public class DonorQCTest {
         sampleInfo5.put("study_ids", "3");
         sampleInfo5.put("qc_status", "pending");
         sampleInfo5.put("qc_passed_fluidigm", false);
-        sampleInfo5.put("qc_passed_genotyping", false);
+        sampleInfo5.put("qc_exclude_from_analysis", false);
         sampleInfo5.put("control", "0");
         sampleInfo5.put("public_name", "sp5");
         samples.put("10", sampleInfo5);
@@ -145,7 +145,7 @@ public class DonorQCTest {
         sampleInfo5v2.put("study_ids", "3");
         sampleInfo5v2.put("qc_status", "failed");
         sampleInfo5v2.put("qc_passed_fluidigm", false);
-        sampleInfo5v2.put("qc_passed_genotyping", false);
+        sampleInfo5v2.put("qc_exclude_from_analysis", false);
         sampleInfo5v2.put("qc_failed_reason", "reason1");
         sampleInfo5v2.put("qc_time", "126");
         sampleInfo5v2.put("qc_by", "u2");
@@ -173,7 +173,7 @@ public class DonorQCTest {
         sampleInfo5v2.put("study_ids", "3");
         sampleInfo5v2.put("qc_status", "selected");
         sampleInfo5v2.put("qc_passed_fluidigm", false);
-        sampleInfo5v2.put("qc_passed_genotyping", false);
+        sampleInfo5v2.put("qc_exclude_from_analysis", false);
         sampleInfo5v2.put("qc_time", "127");
         sampleInfo5v2.put("qc_by", "u2");
         sampleInfo5v2.put("control", "0");
@@ -197,7 +197,7 @@ public class DonorQCTest {
         sampleInfo2v2.put("study_ids", "2");
         sampleInfo2v2.put("qc_status", "failed");
         sampleInfo2v2.put("qc_passed_fluidigm", false);
-        sampleInfo2v2.put("qc_passed_genotyping", false);
+        sampleInfo2v2.put("qc_exclude_from_analysis", false);
         sampleInfo2v2.put("control", "0");
         sampleInfo2v2.put("public_name", "sp2");
         sampleInfo2v2.put("qc_by", "u2");
@@ -228,7 +228,7 @@ public class DonorQCTest {
         sampleInfo5v3.put("study_ids", "3");
         sampleInfo5v3.put("qc_status", "defer");
         sampleInfo5v3.put("qc_passed_fluidigm", false);
-        sampleInfo5v3.put("qc_passed_genotyping", false);
+        sampleInfo5v3.put("qc_exclude_from_analysis", false);
         sampleInfo5v3.put("qc_time", "129");
         sampleInfo5v3.put("qc_by", "u2");
         sampleInfo5v3.put("control", "0");
@@ -251,8 +251,8 @@ public class DonorQCTest {
                     .append("CREATE (u2:`vdp|VRTrack|User` {username:'u2'})")
                     .append("CREATE (s1:`vdp|VRTrack|Sample` {name:'s1',control:'1',public_name:'sp1'})")
                     .append("CREATE (s2:`vdp|VRTrack|Sample` {name:'s2',control:'0',public_name:'sp2',qc_failed:'1'})")
-                    .append("CREATE (s3:`vdp|VRTrack|Sample` {name:'s3',control:'0',public_name:'sp3',qc_passed:'1',qc_passed_genotyping:'1',qc_selected:'1'})")
-                    .append("CREATE (s4:`vdp|VRTrack|Sample` {name:'s4',control:'0',public_name:'sp4',qc_passed:'1',qc_failed:'0',qc_selected:'0'})")
+                    .append("CREATE (s3:`vdp|VRTrack|Sample` {name:'s3',control:'0',public_name:'sp3',qc_passed:'1',qc_exclude_from_analysis:'0',qc_selected:'1'})")
+                    .append("CREATE (s4:`vdp|VRTrack|Sample` {name:'s4',control:'0',public_name:'sp4',qc_passed:'1',qc_exclude_from_analysis:'1',qc_failed:'0',qc_selected:'0'})")
                     .append("CREATE (s5:`vdp|VRTrack|Sample` {name:'s5',control:'0',public_name:'sp5'})")
                     .append("CREATE (d1:`vdp|VRTrack|Donor` {id:'d1'})")
                     .append("CREATE (egender:`vdp|VRTrack|Gender` {gender:'M',source:'sequencescape'})")
