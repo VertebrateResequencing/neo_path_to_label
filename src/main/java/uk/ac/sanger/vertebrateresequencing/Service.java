@@ -964,6 +964,12 @@ public class Service {
     private void addExtraVRTrackInfo (Node node, HashMap<String, Object> props, Label donorLabel, Label sampleLabel, Label laneLabel, Label studyLabel) {
         if (node.hasLabel(donorLabel)) {
             props.put("neo4j_label", "Donor");
+            HashMap<Integer, Node> desiredStudes = new HashMap<Integer, Node>();
+            boolean limitOnStudies = false;
+            if (props.containsKey("desired_studies")) {
+                desiredStudes = (HashMap<Integer, Node>) props.remove("desired_studies");
+                limitOnStudies = true;
+            }
             
             // add the most recent sample created date, and the name of
             // a control sample, or just the shortest sample name if not
@@ -978,6 +984,25 @@ public class Service {
             int numUnresolved = 0; // there are samples but no final qc status set (in case a sample is not expected to ever get genotyping results, or even fluidigm?!)
             for (Relationship dsrel: node.getRelationships(VrtrackRelationshipTypes.sample, out)) {
                 Node sample = dsrel.getEndNode();
+                
+                if (limitOnStudies) {
+                    ArrayList<Integer> sampleStudies = new ArrayList<Integer>();
+                    boolean foundStudy = false;
+                    for (Relationship ssRel : sample.getRelationships(VrtrackRelationshipTypes.member, in)) {
+                        Node study = ssRel.getStartNode();
+                        if (! study.hasLabel(studyLabel)) {
+                            continue;
+                        }
+                        
+                        if (desiredStudes.get(Integer.parseInt(study.getProperty("id").toString())) != null) {
+                            foundStudy = true;
+                            break;
+                        }
+                    }
+                    if (! foundStudy) {
+                        continue;
+                    }
+                }
                 
                 if (sample.hasProperty("created_date")) {
                     int thisDate = Integer.parseInt(sample.getProperty("created_date").toString());
@@ -1025,7 +1050,13 @@ public class Service {
                             unresolved = false;
                         }
                         else {
-                            unresolved = true;
+                            qcVal = sample.getProperty("qc_exclude_from_analysis", null);
+                            if (qcVal != null && qcVal.equals("1")) {
+                                unresolved = false;
+                            }
+                            else {
+                                unresolved = true;
+                            }
                         }
                     }
                 }
@@ -1476,10 +1507,15 @@ public class Service {
                             }
                             else if (studiesStr != null) {
                                 String[] studies = studiesStr.split(",");
-                                
-                                for (String studyIdStr: studies) {
-                                    Node study = db.getNodeById(Long.parseLong(studyIdStr));
-                                    
+                                HashMap<Integer, Node> desiredStudies = new HashMap<Integer, Node>();
+                                for (String studyNodeId: studies) {
+                                    Node study = null;
+                                    try {
+                                        study = db.getNodeById(Long.parseLong(studyNodeId));
+                                    }
+                                    catch (NotFoundException e) {
+                                        continue;
+                                    }
                                     if (study.hasLabel(studyLabel)) {
                                         boolean studyInGroup = false;
                                         for (Relationship sgRel: study.getRelationships(VrtrackRelationshipTypes.has, in)) {
@@ -1493,47 +1529,53 @@ public class Service {
                                             continue;
                                         }
                                         
-                                        if (donorsStr != null) {
-                                            String[] donors = donorsStr.split(",");
+                                        desiredStudies.put(Integer.parseInt(study.getProperty("id").toString()), study);
+                                    }
+                                }
+                                
+                                for (Node study: desiredStudies.values()) {
+                                    if (donorsStr != null) {
+                                        String[] donors = donorsStr.split(",");
+                                        
+                                        for (String donorIdStr: donors) {
+                                            Node donor = db.getNodeById(Long.parseLong(donorIdStr));
                                             
-                                            for (String donorIdStr: donors) {
-                                                Node donor = db.getNodeById(Long.parseLong(donorIdStr));
-                                                
-                                                if (donor.hasLabel(donorLabel)) {
-                                                    if (samplesStr != null) {
-                                                        String[] samples = samplesStr.split(",");
+                                            if (donor.hasLabel(donorLabel)) {
+                                                if (samplesStr != null) {
+                                                    String[] samples = samplesStr.split(",");
+                                                    
+                                                    for (String sampleIdStr: samples) {
+                                                        Node sample = db.getNodeById(Long.parseLong(sampleIdStr));
                                                         
-                                                        for (String sampleIdStr: samples) {
-                                                            Node sample = db.getNodeById(Long.parseLong(sampleIdStr));
-                                                            
-                                                            Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
-                                                            if (sdRel != null) {
-                                                                Node thisDonor = sdRel.getStartNode();
-                                                                if (thisDonor.getId() == donor.getId()) {
-                                                                    if (label.equals("Sample")) {
-                                                                        addNodeDetailsToResults(sample, results, label);
-                                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                                        if (userId != 0) {
-                                                                            results.get(sample.getId()).put("is_admin", isAdmin);
-                                                                        }
+                                                        Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+                                                        if (sdRel != null) {
+                                                            Node thisDonor = sdRel.getStartNode();
+                                                            if (thisDonor.getId() == donor.getId()) {
+                                                                if (label.equals("Sample")) {
+                                                                    addNodeDetailsToResults(sample, results, label);
+                                                                    addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                                    if (userId != 0) {
+                                                                        results.get(sample.getId()).put("is_admin", isAdmin);
                                                                     }
-                                                                    else if (label.equals("Donor")) {
-                                                                        addNodeDetailsToResults(thisDonor, results, label);
-                                                                        addExtraVRTrackInfo(thisDonor, results.get(thisDonor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                                        if (userId != 0) {
-                                                                            results.get(thisDonor.getId()).put("is_admin", isAdmin);
-                                                                        }
+                                                                }
+                                                                else if (label.equals("Donor")) {
+                                                                    addNodeDetailsToResults(thisDonor, results, label);
+                                                                    HashMap<String, Object> donorProps = results.get(thisDonor.getId());
+                                                                    donorProps.put("desired_studies", desiredStudies);
+                                                                    addExtraVRTrackInfo(thisDonor, donorProps, donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                                    if (userId != 0) {
+                                                                        results.get(thisDonor.getId()).put("is_admin", isAdmin);
                                                                     }
-                                                                    else if (label.equals("Lane")) {
-                                                                        for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
-                                                                            Node library = salRel.getEndNode();
-                                                                            for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
-                                                                                Node lane = llRel.getEndNode();
-                                                                                addNodeDetailsToResults(lane, results, label);
-                                                                                addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                                                if (userId != 0) {
-                                                                                    results.get(lane.getId()).put("is_admin", isAdmin);
-                                                                                }
+                                                                }
+                                                                else if (label.equals("Lane")) {
+                                                                    for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
+                                                                        Node library = salRel.getEndNode();
+                                                                        for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                                            Node lane = llRel.getEndNode();
+                                                                            addNodeDetailsToResults(lane, results, label);
+                                                                            addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                                            if (userId != 0) {
+                                                                                results.get(lane.getId()).put("is_admin", isAdmin);
                                                                             }
                                                                         }
                                                                     }
@@ -1541,70 +1583,31 @@ public class Service {
                                                             }
                                                         }
                                                     }
-                                                    else if (addExtra) {
-                                                        if (label.equals("Donor")) {
-                                                            addNodeDetailsToResults(donor, results, label);
-                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                            if (userId != 0) {
-                                                                results.get(donor.getId()).put("is_admin", isAdmin);
-                                                            }
-                                                        }
-                                                        else if (label.equals("Sample")) {
-                                                            for (Relationship dsRel: donor.getRelationships(VrtrackRelationshipTypes.sample, out)) {
-                                                                Node sample = dsRel.getEndNode();
-                                                                addNodeDetailsToResults(sample, results, label);
-                                                                addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                                if (userId != 0) {
-                                                                    results.get(sample.getId()).put("is_admin", isAdmin);
-                                                                }
-                                                            }
+                                                }
+                                                else if (addExtra) {
+                                                    if (label.equals("Donor")) {
+                                                        addNodeDetailsToResults(donor, results, label);
+                                                        HashMap<String, Object> donorProps = results.get(donor.getId());
+                                                        donorProps.put("desired_studies", desiredStudies);
+                                                        addExtraVRTrackInfo(donor, donorProps, donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                        if (userId != 0) {
+                                                            results.get(donor.getId()).put("is_admin", isAdmin);
                                                         }
                                                     }
-                                                    else if (label.equals("Lane")) {
+                                                    else if (label.equals("Sample")) {
                                                         for (Relationship dsRel: donor.getRelationships(VrtrackRelationshipTypes.sample, out)) {
                                                             Node sample = dsRel.getEndNode();
-                                                            for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
-                                                                Node library = salRel.getEndNode();
-                                                                for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
-                                                                    Node lane = llRel.getEndNode();
-                                                                    addNodeDetailsToResults(lane, results, label);
-                                                                    addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                                    if (userId != 0) {
-                                                                        results.get(lane.getId()).put("is_admin", isAdmin);
-                                                                    }
-                                                                }
+                                                            addNodeDetailsToResults(sample, results, label);
+                                                            addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                            if (userId != 0) {
+                                                                results.get(sample.getId()).put("is_admin", isAdmin);
                                                             }
                                                         }
                                                     }
                                                 }
-                                            }
-                                        }
-                                        else if (samplesStr != null) {
-                                            String[] samples = samplesStr.split(",");
-                                            
-                                            for (String sampleIdStr: samples) {
-                                                Node sample = db.getNodeById(Long.parseLong(sampleIdStr));
-                                                
-                                                if (sample.hasLabel(sampleLabel)) {
-                                                    if (label.equals("Sample")) {
-                                                        addNodeDetailsToResults(sample, results, label);
-                                                        addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                        if (userId != 0) {
-                                                            results.get(sample.getId()).put("is_admin", isAdmin);
-                                                        }
-                                                    }
-                                                    else if (label.equals("Donor")) {
-                                                        Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
-                                                        if (sdRel != null) {
-                                                            Node donor = sdRel.getStartNode();
-                                                            addNodeDetailsToResults(donor, results, label);
-                                                            addExtraVRTrackInfo(donor, results.get(donor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                            if (userId != 0) {
-                                                                results.get(donor.getId()).put("is_admin", isAdmin);
-                                                            }
-                                                        }
-                                                    }
-                                                    else if (label.equals("Lane")) {
+                                                else if (label.equals("Lane")) {
+                                                    for (Relationship dsRel: donor.getRelationships(VrtrackRelationshipTypes.sample, out)) {
+                                                        Node sample = dsRel.getEndNode();
                                                         for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
                                                             Node library = salRel.getEndNode();
                                                             for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
@@ -1620,26 +1623,73 @@ public class Service {
                                                 }
                                             }
                                         }
-                                        else if (label.equals("Lane")) {
-                                            for (Relationship slRel: study.getRelationships(VrtrackRelationshipTypes.created_for, in)) {
-                                                Node lane = slRel.getStartNode();
-                                                addNodeDetailsToResults(lane, results, label);
-                                                addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                if (userId != 0) {
-                                                    results.get(lane.getId()).put("is_admin", isAdmin);
+                                    }
+                                    else if (samplesStr != null) {
+                                        String[] samples = samplesStr.split(",");
+                                        
+                                        for (String sampleIdStr: samples) {
+                                            Node sample = db.getNodeById(Long.parseLong(sampleIdStr));
+                                            
+                                            if (sample.hasLabel(sampleLabel)) {
+                                                if (label.equals("Sample")) {
+                                                    addNodeDetailsToResults(sample, results, label);
+                                                    addExtraVRTrackInfo(sample, results.get(sample.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                    if (userId != 0) {
+                                                        results.get(sample.getId()).put("is_admin", isAdmin);
+                                                    }
+                                                }
+                                                else if (label.equals("Donor")) {
+                                                    Relationship sdRel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
+                                                    if (sdRel != null) {
+                                                        Node donor = sdRel.getStartNode();
+                                                        addNodeDetailsToResults(donor, results, label);
+                                                        HashMap<String, Object> donorProps = results.get(donor.getId());
+                                                        donorProps.put("desired_studies", desiredStudies);
+                                                        addExtraVRTrackInfo(donor, donorProps, donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                        if (userId != 0) {
+                                                            results.get(donor.getId()).put("is_admin", isAdmin);
+                                                        }
+                                                    }
+                                                }
+                                                else if (label.equals("Lane")) {
+                                                    for (Relationship salRel: sample.getRelationships(VrtrackRelationshipTypes.prepared, out)) {
+                                                        Node library = salRel.getEndNode();
+                                                        for (Relationship llRel: library.getRelationships(VrtrackRelationshipTypes.sequenced, out)) {
+                                                            Node lane = llRel.getEndNode();
+                                                            addNodeDetailsToResults(lane, results, label);
+                                                            addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                            if (userId != 0) {
+                                                                results.get(lane.getId()).put("is_admin", isAdmin);
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
-                                        else if (addExtra) {
-                                            for (Relationship soRel: study.getRelationships(VrtrackRelationshipTypes.member, out)) {
-                                                Node sampleOrDonor = soRel.getEndNode();
-                                                
-                                                if (sampleOrDonor.hasLabel(desiredLabel)) {
-                                                    addNodeDetailsToResults(sampleOrDonor, results, label);
-                                                    addExtraVRTrackInfo(sampleOrDonor, results.get(sampleOrDonor.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                                    if (userId != 0) {
-                                                        results.get(sampleOrDonor.getId()).put("is_admin", isAdmin);
-                                                    }
+                                    }
+                                    else if (label.equals("Lane")) {
+                                        for (Relationship slRel: study.getRelationships(VrtrackRelationshipTypes.created_for, in)) {
+                                            Node lane = slRel.getStartNode();
+                                            addNodeDetailsToResults(lane, results, label);
+                                            addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                            if (userId != 0) {
+                                                results.get(lane.getId()).put("is_admin", isAdmin);
+                                            }
+                                        }
+                                    }
+                                    else if (addExtra) {
+                                        for (Relationship soRel: study.getRelationships(VrtrackRelationshipTypes.member, out)) {
+                                            Node sampleOrDonor = soRel.getEndNode();
+                                            
+                                            if (sampleOrDonor.hasLabel(desiredLabel)) {
+                                                addNodeDetailsToResults(sampleOrDonor, results, label);
+                                                HashMap<String, Object> props = results.get(sampleOrDonor.getId());
+                                                if (label.equals("Donor")) {
+                                                    props.put("desired_studies", desiredStudies);
+                                                }
+                                                addExtraVRTrackInfo(sampleOrDonor, props, donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                if (userId != 0) {
+                                                    results.get(sampleOrDonor.getId()).put("is_admin", isAdmin);
                                                 }
                                             }
                                         }
