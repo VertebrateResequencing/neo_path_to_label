@@ -1957,6 +1957,7 @@ public class Service {
                             if (pathNode.hasLabel(fseLabel)) {
                                 if (pathNode.hasRelationship(VrtrackRelationshipTypes.qc_file, out)) {
                                     fseWithQC = pathNode;
+                                    fseProps.put("qced_file", Long.toString(pathNode.getId()));
                                 }
                                 
                                 for (String property : pathNode.getPropertyKeys()) {

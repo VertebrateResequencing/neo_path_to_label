@@ -29,6 +29,7 @@ public class FileQCTest {
         prop.put("manual_qc", "1");
         prop.put("md5", "md52");
         prop.put("extra", "val");
+        prop.put("qced_file", "7");
         prop.put("neo4j_label", "FileSystemElement");
         expected.put("25", prop);
         prop = new LinkedHashMap<String, Object>();
