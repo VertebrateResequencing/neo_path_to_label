@@ -76,6 +76,8 @@ public class Service {
     DecimalFormat df = new DecimalFormat("#.##");
     //df.setRoundingMode(RoundingMode.CEILING); // can't get this to compile, don't know why
     
+    Pattern gtcheckStatusRegex = Pattern.compile("^status=(\\S+)");
+    
     private static Map<String, Node> fseRoots = new HashMap<String, Node>();
     
     private List<org.neo4j.graphdb.Path> getClosestPaths (GraphDatabaseService db, Node start, String label, Direction direction, Integer depth, Integer all, boolean check_literal_props, boolean check_regex_props, List<List<String>> properties_literal, List<Map.Entry<String,Pattern>> properties_regex) {
@@ -1313,29 +1315,50 @@ public class Service {
                             String matched = genotype.getProperty("matched_sample_name").toString();
                             String expected = genotype.getProperty("expected_sample_name").toString();
                             String pass = genotype.getProperty("pass").toString();
-                            gpObj = genotype.getProperty("match_count", null);
-                            float matchCount = 0;
-                            if (gpObj != null) {
-                                matchCount = Float.parseFloat(gpObj.toString());
-                            }
-                            gpObj = genotype.getProperty("common_snp_count", null);
-                            float commonSNPCount = 0;
-                            if (gpObj != null) {
-                                commonSNPCount = Float.parseFloat(gpObj.toString());
-                            }
                             
+                            gpObj = genotype.getProperty("concordance", null);
                             String concordance = "0";
-                            if ((matchCount > 0) && (commonSNPCount > 0)) {
-                                concordance = df.format(matchCount / commonSNPCount);
+                            String status = "unknown";
+                            boolean statusFound = false;
+                            if (gpObj != null) {
+                                concordance = df.format(Float.parseFloat(gpObj.toString())); // to bring it down to 2 decimal places
+                                
+                                // the status property has a string like "status=xyz ..."
+                                gpObj = genotype.getProperty("status", null);
+                                if (gpObj != null) {
+                                    Matcher m = gtcheckStatusRegex.matcher(gpObj.toString());
+                                    while (m.find()) {
+                                        status = m.group(1);
+                                        statusFound = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            else {
+                                gpObj = genotype.getProperty("match_count", null);
+                                float matchCount = 0;
+                                if (gpObj != null) {
+                                    matchCount = Float.parseFloat(gpObj.toString());
+                                }
+                                gpObj = genotype.getProperty("common_snp_count", null);
+                                float commonSNPCount = 0;
+                                if (gpObj != null) {
+                                    commonSNPCount = Float.parseFloat(gpObj.toString());
+                                }
+                                
+                                if ((matchCount > 0) && (commonSNPCount > 0)) {
+                                    concordance = df.format(matchCount / commonSNPCount);
+                                }
                             }
                             
-                            String status = "unknown";
-                            if (matched.equals(expected)) {
-                                if (pass.equals("1")) {
-                                    status = "confirmed";
-                                }
-                                else {
-                                    status = "unconfirmed";
+                            if (! statusFound) {
+                                if (matched.equals(expected)) {
+                                    if (pass.equals("1")) {
+                                        status = "confirmed";
+                                    }
+                                    else {
+                                        status = "unconfirmed";
+                                    }
                                 }
                             }
                             
@@ -1344,7 +1367,7 @@ public class Service {
                             Map<String, Object> statProps = genotype.getAllProperties();
                             for (Map.Entry<String, Object> entry : statProps.entrySet()) {
                                 String key = entry.getKey();
-                                if (key.equals("date") || key.equals("uuid")) {
+                                if (key.equals("date") || key.equals("uuid") || key.equals("status")) {
                                     continue;
                                 }
                                 props.put("gtcheckdata:" + key, entry.getValue().toString());

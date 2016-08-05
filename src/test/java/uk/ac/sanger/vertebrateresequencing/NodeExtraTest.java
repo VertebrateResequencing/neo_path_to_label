@@ -96,6 +96,34 @@ public class NodeExtraTest {
         expected.put("7", prop);
         
         assertEquals(expected, actual);
+        
+        response = HTTP.GET(neo4j.httpURI().resolve("/v1/service/get_node_with_extra_info/vdp/8").toString());
+        actual = response.content();
+        
+        expected = new LinkedHashMap<String, HashMap<String, Object>>();
+        prop = new LinkedHashMap<String, Object>();
+        prop.put("unique", "2");
+        prop.put("qcgrind_qc_status", "passed");
+        prop.put("neo4j_label", "Lane");
+        prop.put("study_id", "2");
+        prop.put("study_name", "study two");
+        prop.put("study_accession", "sacc2");
+        prop.put("individual_name", "sp1");
+        prop.put("sample_node_id", "2");
+        prop.put("sample_name", "s1");
+        prop.put("sample_accession", "sacc1");
+        prop.put("sample_supplier_name", "sn1");
+        prop.put("gender", "M");
+        prop.put("library_id", "1");
+        prop.put("gtcheck", "confirmed (s1:0.98)");
+        prop.put("gtcheckdata:matched_sample_name", "s1");
+        prop.put("gtcheckdata:expected_sample_name", "s1");
+        prop.put("gtcheckdata:pass", "1");
+        prop.put("gtcheckdata:concordance", "0.975");
+        prop.put("gtcheckdata:ratio", "1.00");
+        expected.put("8", prop);
+        
+        assertEquals(expected, actual);
     }
     
     public static final String MODEL_STATEMENT =
@@ -108,16 +136,20 @@ public class NodeExtraTest {
                     .append("CREATE (d1:`vdp|VRTrack|Donor` {id:'d1'})")
                     .append("CREATE (lib1:`vdp|VRTrack|Library` {id:'1'})")
                     .append("CREATE (lan1:`vdp|VRTrack|Lane` {unique:'1',qcgrind_qc_status:'passed'})")
-                    .append("CREATE (cram1:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram',basename:'lan1.cram',manual_qc:'1'})")
+                    .append("CREATE (lan2:`vdp|VRTrack|Lane` {unique:'2',qcgrind_qc_status:'passed'})")
                     .append("CREATE (qcf1:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram.stats',basename:'lan1.cram.stats'})")
                     .append("CREATE (qcf2:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram.gtcheck',basename:'lan1.cram.gtcheck'})")
                     .append("CREATE (qcf3:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram.verify',basename:'lan1.cram.verify'})")
+                    .append("CREATE (qcf4:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram.vrgtcheck',basename:'lan1.cram.vrgtcheck'})")
                     .append("CREATE (plot1:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram.plot.coverage',basename:'lan1.cram.plot.coverage',caption:'Coverage'})")
                     .append("CREATE (plot2:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram.plot.insert_size',basename:'lan1.cram.plot.insert_size',caption:'Insert Size'})")
                     .append("CREATE (geno:`vdp|VRTrack|Genotype` {uuid:'g2',date:'124',matched_sample_name:'foo',expected_sample_name:'foo',pass:'0',match_count:'14',common_snp_count:'16',otherresult:'5'})")
                     .append("CREATE (stats:`vdp|VRTrack|Bam_Stats` {uuid:'s1',date:'125',result1:'1',result2:'2'})")
                     .append("CREATE (verify:`vdp|VRTrack|Verify_Bam_ID` {uuid:'v1',date:'126',result1:'1',result2:'2'})")
                     .append("CREATE (bam1:`vdp|VRPipe|FileSystemElement` {path:'/imported/lan1.bam',basename:'lan1.bam'})")
+                    .append("CREATE (cram1:`vdp|VRPipe|FileSystemElement` {path:'/seq/lan1.cram',basename:'lan1.cram',manual_qc:'1'})")
+                    .append("CREATE (bam2:`vdp|VRPipe|FileSystemElement` {path:'/imported/lan2.bam',basename:'lan2.bam'})")
+                    .append("CREATE (geno2:`vdp|VRTrack|Genotype` {uuid:'g3',date:'125',matched_sample_name:'s1',expected_sample_name:'s1',pass:'1',ratio:'1.00',concordance:'0.975'})")
                     .append("CREATE (gender:`vdp|VRTrack|Gender` {gender:'M'})")
                     .append("CREATE (d1)-[:sample]->(s1)")
                     .append("CREATE (d1)-[:sample]->(s2)")
@@ -132,14 +164,20 @@ public class NodeExtraTest {
                     .append("CREATE (lib1)-[:sequenced]->(lan1)")
                     .append("CREATE (lan1)-[:created_for]->(stu2)")
                     .append("CREATE (lan1)-[:aligned]->(cram1)")
+                    .append("CREATE (lib1)-[:sequenced]->(lan2)")
+                    .append("CREATE (lan2)-[:created_for]->(stu2)")
+                    .append("CREATE (lan2)-[:aligned]->(cram2)")
                     .append("CREATE (cram1)-[:qc_file]->(qcf1)")
                     .append("CREATE (cram1)-[:qc_file]->(qcf2)")
                     .append("CREATE (cram1)-[:qc_file]->(qcf3)")
+                    .append("CREATE (cram2)-[:qc_file]->(qcf4)")
                     .append("CREATE (qcf1)-[:summary_stats]->(stats)")
                     .append("CREATE (qcf2)-[:genotype_data]->(geno)")
                     .append("CREATE (qcf3)-[:verify_bam_id_data]->(verify)")
+                    .append("CREATE (qcf4)-[:genotype_data]->(geno2)")
                     .append("CREATE (qcf1)-[:bamstats_plot]->(plot1)")
                     .append("CREATE (qcf1)-[:bamstats_plot]->(plot2)")
                     .append("CREATE (cram1)-[:imported]->(bam1)")
+                    .append("CREATE (cram2)-[:imported]->(bam2)")
                     .toString();
 }
