@@ -1693,10 +1693,12 @@ public class Service {
                                     else if (label.equals("Lane")) {
                                         for (Relationship slRel: study.getRelationships(VrtrackRelationshipTypes.created_for, in)) {
                                             Node lane = slRel.getStartNode();
-                                            addNodeDetailsToResults(lane, results, label);
-                                            addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
-                                            if (userId != 0) {
-                                                results.get(lane.getId()).put("is_admin", isAdmin);
+                                            if (lane.hasLabel(laneLabel)) {
+                                                addNodeDetailsToResults(lane, results, label);
+                                                addExtraVRTrackInfo(lane, results.get(lane.getId()), donorLabel, sampleLabel, laneLabel, studyLabel);
+                                                if (userId != 0) {
+                                                    results.get(lane.getId()).put("is_admin", isAdmin);
+                                                }
                                             }
                                         }
                                     }
