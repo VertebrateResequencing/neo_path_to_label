@@ -1207,9 +1207,16 @@ public class Service {
                         props.put("sample_supplier_name", gpObj.toString());
                     }
                     
-                    Relationship sgRel = sample.getSingleRelationship(VrtrackRelationshipTypes.gender, out);
-                    if (sgRel != null) {
-                        Node gender = sgRel.getEndNode();
+                    // we're supposed to only have 1 gender attached here, but
+                    // can end up with multiple; pick the most recent by node id
+                    Node gender = null;
+                    for (Relationship sgRel: sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
+                        Node thisgender = sgRel.getEndNode();
+                        if (gender == null || thisgender.getId() > gender.getId()) {
+                            gender = thisgender;
+                        }
+                    }
+                    if (gender != null) {
                         props.put("gender", gender.getProperty("gender").toString());
                     }
                 }
