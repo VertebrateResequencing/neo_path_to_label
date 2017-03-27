@@ -278,8 +278,14 @@ public class Service {
         
         addNodeDetailsToResults(sample, results, "Sample");
         
+        Node gender = null;
         for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
-            Node gender = grel.getEndNode();
+            Node thisgender = grel.getEndNode();
+            if (gender == null || thisgender.getId() > gender.getId()) {
+                gender = thisgender;
+            }
+        }
+        if (gender != null) {
             addNodeDetailsToResults(gender, results, "Gender");
         }
         
@@ -707,12 +713,15 @@ public class Service {
                 }
                 
                 // get expected gender
+                Node egender = null;
                 for (Relationship sgrel : sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
-                    Node gender = sgrel.getEndNode();
-                    if (gender.getProperty("source").equals("sequencescape")) {
-                        sampleInfo.put("expected_gender", gender.getProperty("gender"));
-                        break;
+                    Node thisgender = sgrel.getEndNode();
+                    if (egender == null || thisgender.getId() > egender.getId()) {
+                        egender = thisgender;
                     }
+                }
+                if (egender != null) {
+                    sampleInfo.put("expected_gender", egender.getProperty("gender"));
                 }
                 
                 // get calculated actual gender
@@ -2828,14 +2837,19 @@ public class Service {
                             continue;
                         }
                         
+                        Node gender = null;
                         for (Relationship grel : sample.getRelationships(VrtrackRelationshipTypes.gender, out)) {
-                            Node gender = grel.getEndNode();
+                            Node thisgender = grel.getEndNode();
+                            if (gender == null || thisgender.getId() > gender.getId()) {
+                                gender = thisgender;
+                            }
+                        }
+                        if (gender != null) {
                             addHierarchyNodeProps(gender, "gender", hierarchyProps);
                             if (! passesVRTrackFilesParentFilter(parentFilters, "gender", hierarchyProps)) {
                                 failedPF++;
                                 continue LANE;
                             }
-                            break;
                         }
                         
                         rel = sample.getSingleRelationship(VrtrackRelationshipTypes.sample, in);
